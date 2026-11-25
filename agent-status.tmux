@@ -41,10 +41,24 @@ state_chain_format() {
 
 render_name() { printf '%s' "$1"; }
 render_icon() { icon_format "$1"; }
+render_spaced_icon() { printf ' %s' "$(icon_format "$1")"; }
 
 # Window state is derived from its panes at draw time, so it never goes stale.
 WINDOW_STATES="#{P:#{$OPT_STATE} }"
 PANE_STATES="#{$OPT_STATE} "
+SESSION_STATES="#{W:#{P:#{$OPT_STATE} }}"
+
+# tmux 3.2's default choose-tree format plus each row's state.
+TREE_TITLE='#{?#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}},: "#{pane_title}",}'
+TREE_WINDOW_TITLE='#{?#{&&:#{==:#{window_panes},1},#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}}},: "#{pane_title}",}'
+TREE_FORMAT="#{?pane_format,\
+#{?pane_marked,#[reverse],}#{pane_current_command}#{?pane_active,*,}#{?pane_marked,M,}\
+$(state_chain_format "$PANE_STATES" render_spaced_icon)$TREE_TITLE,\
+#{?window_format,\
+#{?window_marked_flag,#[reverse],}#{window_name}#{window_flags}\
+$(state_chain_format "$WINDOW_STATES" render_spaced_icon)$TREE_WINDOW_TITLE,\
+#{session_windows} windows#{?session_grouped, (group #{session_group}: #{session_group_list}),}\
+#{?session_attached, (attached),}$(state_chain_format "$SESSION_STATES" render_spaced_icon)}}"
 
 interpolations=(
 	"#{agent_status}" "$(state_chain_format "$WINDOW_STATES" render_icon)"
@@ -98,10 +112,29 @@ register_hooks() {
 	done
 }
 
+# Only tmux's default s/w bindings (or ours) are replaced.
+bind_tree_keys() {
+	local enabled kw key note words
+	enabled="$(get_tmux_option @agent-status-choose-tree on)"
+	tmux set-option -g "$OPT_TREE_FORMAT" "$TREE_FORMAT"
+	for kw in s:session w:window; do
+		key="${kw%%:*}"
+		note="Choose a ${kw#*:} from a list"
+		read -r -a words <<<"$(tmux list-keys -T prefix "$key" 2>/dev/null)"
+		if [ "$enabled" != off ]; then
+			[ "${words[*]:4}" = "choose-tree -Z$key" ] &&
+				tmux bind-key -N "$note" "$key" choose-tree "-Z$key" -F "#{E:$OPT_TREE_FORMAT}"
+		elif [ "${words[*]:4}" = "choose-tree -Z$key -F \"#{E:$OPT_TREE_FORMAT}\"" ]; then
+			tmux bind-key -N "$note" "$key" choose-tree "-Z$key"
+		fi
+	done
+}
+
 bind_keys() {
 	local key
 	key="$(get_tmux_option @agent-status-jump-key '')"
 	[ -z "$key" ] || tmux bind-key "$key" run-shell -b "$SCRIPT jump --client '#{client_name}'"
+	bind_tree_keys
 }
 
 main() {

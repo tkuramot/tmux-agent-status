@@ -91,6 +91,20 @@ highlight windows waiting for approval:
 set -g window-status-format '#{?#{==:#{agent_state},waiting},#[bg=red],}#I #W'
 ```
 
+## Session and window tree
+
+`prefix s` and `prefix w` (`choose-tree`) show each session's, window's and
+pane's state after its name. The plugin rebinds these keys only while they
+have tmux's default binding; set `@agent-status-choose-tree` to `off` to keep
+tmux's own format. For your own `choose-tree` bindings, use the same format:
+
+```tmux
+bind-key s choose-tree -s -F '#{E:@agent-status_tree_format}'
+```
+
+The format is tmux 3.2's default tree format with the state appended, so
+styling and pane flags added in later tmux versions are not shown.
+
 ## Agents
 
 ### Claude Code
@@ -191,6 +205,7 @@ if [ "$rc" -eq 0 ]; then agent-status set done; else agent-status set error; fi
 | `@agent-status-summary-separator` | ` ` (space) | Separator between summary entries. |
 | `@agent-status-auto-seen` | `on` | Turn `done` into `idle` once the pane is viewed in an attached session. |
 | `@agent-status-jump-key` | *(unset)* | Key (after prefix) bound to `jump`. It replaces any existing binding of that key, and is not unbound if the option is removed later. |
+| `@agent-status-choose-tree` | `on` | Show states in `prefix s` / `prefix w` (see [Session and window tree](#session-and-window-tree)). |
 | `@agent-status-jump-states` | `waiting error done` | States `jump` looks for, in order. |
 
 Icon changes apply on the next redraw. An empty value means the default; to

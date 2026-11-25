@@ -8,6 +8,7 @@ AGENT_STATUS_STATES="waiting error working done idle"
 OPT_STATE="@agent-status_state"
 OPT_AGENT="@agent-status_agent"
 OPT_SUMMARY="@agent-status_summary"
+OPT_TREE_FORMAT="@agent-status_tree_format"
 
 # Avoid window flags (* - # ! ~ M Z), and _ or . which the current window's
 # underline hides. Each icon undoes only its own style, keeping the user's.

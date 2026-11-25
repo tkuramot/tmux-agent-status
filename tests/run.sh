@@ -86,6 +86,16 @@ assert_eq "defaults are not written to options" "" "$(t show-option -gqv @agent-
 assert_eq "user hooks are preserved" 'pane-exited[0] set-option -g @user-hook ran' \
 	"$(t show-hooks -g pane-exited | grep -F 'pane-exited[0]')"
 assert_eq "no agent renders empty" "|" "$(window_state "$W1")"
+assert_eq "choose-tree keys use the tree format" 2 \
+	"$(t list-keys -T prefix | grep -c 'choose-tree -Z[sw] -F "#{E:@agent-status_tree_format}"')"
+t bind-key w choose-tree -w \; set-option -g @agent-status-choose-tree off
+"$ROOT/agent-status.tmux"
+assert_eq "turning choose-tree off restores the default" "choose-tree -Zs" \
+	"$(t list-keys -T prefix s | awk '{ $1 = $2 = $3 = $4 = ""; print substr($0, 5) }')"
+assert_eq "custom choose-tree keys are left alone" "choose-tree -w" \
+	"$(t list-keys -T prefix w | awk '{ $1 = $2 = $3 = $4 = ""; print substr($0, 5) }')"
+t set-option -gu @agent-status-choose-tree \; bind-key w choose-tree -Zw
+"$ROOT/agent-status.tmux"
 
 # --- emit contract ----------------------------------------------------------
 
@@ -125,6 +135,8 @@ assert_eq "agent is recorded" claude-code "$(t display-message -p -t "$P1" '#{@a
 assert_eq "pane format renders state and icon" "working|R" "$(pane_border "$P1")"
 assert_eq "window derives from its panes" "working|R" "$(window_state "$W1")"
 assert_eq "summary counts the pane" R1 "$(summary)"
+case "$(t display-message -p -t "$P1" '#{E:@agent-status_tree_format}')" in *"* R"*) r=ok ;; *) r=no ;; esac
+assert_eq "tree format shows the pane state" ok "$r"
 
 emit "$P2" Notification:permission_prompt
 assert_eq "matcher events map through the adapter" waiting "$(pane_state "$P2")"
