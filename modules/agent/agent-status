@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agent-status: agent-agnostic state store for tmux-agent-status.
+# agent-status: agent-agnostic state store for tmux-pane-status.
 
 set -u
 set -f
@@ -15,12 +15,9 @@ done
 CURRENT_DIR="$(cd -P "$(dirname "$source")" && pwd)"
 unset source dir
 # shellcheck source=scripts/helpers.sh
-. "$CURRENT_DIR/helpers.sh"
+. "$CURRENT_DIR/../../scripts/helpers.sh"
 
-ADAPTERS_DIR="${CURRENT_DIR%/*}/adapters"
-
-# Non-whitespace, so `read` keeps empty fields.
-US=$'\037'
+ADAPTERS_DIR="$CURRENT_DIR/adapters"
 
 VISIBLE_FORMAT='#{&&:#{pane_active},#{&&:#{window_active},#{session_attached}}}'
 
@@ -34,8 +31,6 @@ Usage: agent-status <command> [arguments]
   set <state> [--pane P] [--agent A]
   clear [--pane P]
   seen [--pane P]                  Turn "done" into "idle".
-  refresh                          Recompute the summary.
-  jump [--client C] [state...]     Switch to the next pane in a state.
   list                             Print panes that have a state.
   check <agent>                    Validate the agent's adapter map.
   hooks <agent>                    Print hook settings generated from the map.
@@ -50,7 +45,7 @@ die() {
 }
 
 is_state() {
-	case " $AGENT_STATUS_STATES " in
+	case " $AGENT_STATES " in
 	*" $1 "*) [ -n "$1" ] ;;
 	*) return 1 ;;
 	esac
@@ -79,17 +74,6 @@ pane_arg() {
 
 # --- state ----------------------------------------------------------------
 
-# Run tmux commands on a pane and refresh the summary if its state changed.
-# The before/after reads share one command list with the change.
-change_pane() {
-	local pane="$1" out
-	shift
-	# Brackets keep an empty state from being lost to newline trimming.
-	out="$(tmux display-message -p -t "$pane" "[#{$OPT_STATE}]" \; "$@" \; \
-		display-message -p -t "$pane" "[#{$OPT_STATE}]")" || return 1
-	[ "${out%%$'\n'*}" = "${out#*$'\n'}" ] || refresh_summary
-}
-
 # apply_state PANE STATE AGENT [FROM_STATES]
 # The condition is evaluated by tmux, so nothing can interleave between the
 # check and the write.
@@ -99,71 +83,29 @@ apply_state() {
 		cond=""
 		for st in ${from//,/ }; do
 			if [ -z "$cond" ]; then
-				cond="#{==:#{$OPT_STATE},$st}"
+				cond="#{==:#{$OPT_AGENT_STATE},$st}"
 			else
-				cond="#{||:#{==:#{$OPT_STATE},$st},$cond}"
+				cond="#{||:#{==:#{$OPT_AGENT_STATE},$st},$cond}"
 			fi
 		done
 	fi
 	value="$state"
 	[ "$state" != "done" ] ||
-		value="#{?#{==:#{@agent-status-auto-seen},off},done,#{?$VISIBLE_FORMAT,idle,done}}"
-	cmd="set-option -pF -t $pane $OPT_STATE \"$value\""
-	[ -z "$agent" ] || cmd="$cmd ; set-option -p -t $pane $OPT_AGENT $agent"
-	change_pane "$pane" if-shell -F -t "$pane" "$cond" "$cmd"
+		value="#{?#{==:#{@pane-status-agent-auto-seen},off},done,#{?$VISIBLE_FORMAT,idle,done}}"
+	cmd="set-option -pF -t $pane $OPT_AGENT_STATE \"$value\""
+	[ -z "$agent" ] || cmd="$cmd ; set-option -p -t $pane $OPT_AGENT_NAME $agent"
+	tmux if-shell -F -t "$pane" "$cond" "$cmd"
 }
 
 clear_state() {
-	change_pane "$1" set-option -pu -t "$1" "$OPT_STATE" \; set-option -pu -t "$1" "$OPT_AGENT"
-}
-
-# Optimistic: if pane states changed while we computed, recompute, so the
-# last writer always reflects current state.
-refresh_summary() {
-	local data panes config summary
-	for _ in 1 2 3 4 5; do
-		data="$(tmux list-panes -a -F "#{pane_id}${US}#{$OPT_STATE}" \; \
-			display-message -p "#{@agent-status-summary-states}${US}#{@agent-status-summary-separator}${US}#{$OPT_SUMMARY}")" || return 0
-		panes="${data%$'\n'*}"
-		config="${data##*$'\n'}"
-		summary="$(printf '%s\n%s\n' "$config" "$panes" | US="$US" STATES="$AGENT_STATUS_STATES" \
-			ICON_waiting="$(icon_format waiting)" ICON_error="$(icon_format error)" \
-			ICON_working="$(icon_format working)" ICON_done="$(icon_format "done")" \
-			ICON_idle="$(icon_format idle)" awk '
-			BEGIN {
-				FS = ENVIRON["US"]
-				split(ENVIRON["STATES"], all, " ")
-				for (i in all) icon[all[i]] = ENVIRON["ICON_" all[i]]
-			}
-			NR == 1 {
-				n = split($1 == "" ? "waiting error working done" : $1, order, " ")
-				sep = ($2 == "") ? " " : $2
-				current = $3
-				next
-			}
-			!seen[$1]++ { count[$2]++ }
-			END {
-				out = ""
-				for (i = 1; i <= n; i++)
-					if (order[i] in icon && count[order[i]] > 0)
-						out = out (out == "" ? "" : sep) icon[order[i]] count[order[i]]
-				if (out == current) exit 1
-				print out
-			}')" || return 0
-		if [ -n "$summary" ]; then
-			tmux set-option -g "$OPT_SUMMARY" "$summary"
-		else
-			tmux set-option -gu "$OPT_SUMMARY"
-		fi
-		[ "$(tmux list-panes -a -F "#{pane_id}${US}#{$OPT_STATE}")" != "$panes" ] || return 0
-	done
+	tmux set-option -pu -t "$1" "$OPT_AGENT_STATE" \; set-option -pu -t "$1" "$OPT_AGENT_NAME"
 }
 
 # --- adapters -------------------------------------------------------------
 
 find_map() {
 	local dir config="${XDG_CONFIG_HOME:-${HOME:+$HOME/.config}}"
-	for dir in ${config:+"$config/tmux-agent-status/adapters"} "$ADAPTERS_DIR"; do
+	for dir in ${config:+"$config/tmux-pane-status/adapters"} "$ADAPTERS_DIR"; do
 		[ -r "$dir/$1/map" ] && printf '%s' "$dir/$1/map" && return 0
 	done
 	return 1
@@ -256,16 +198,15 @@ print_hooks() {
 # --- commands -------------------------------------------------------------
 
 parse_args() {
-	PANE_ARG="" PANE_GIVEN=0 AGENT_ARG="" CLIENT_ARG=""
+	PANE_ARG="" PANE_GIVEN=0 AGENT_ARG=""
 	POSITIONAL=()
 	while [ "$#" -gt 0 ]; do
 		case "$1" in
-		--pane | --agent | --client)
+		--pane | --agent)
 			[ "$#" -ge 2 ] || die "$1 requires a value"
 			case "$1" in
 			--pane) PANE_ARG="$2" PANE_GIVEN=1 ;;
 			--agent) AGENT_ARG="$2" ;;
-			--client) CLIENT_ARG="$2" ;;
 			esac
 			shift 2
 			;;
@@ -306,7 +247,7 @@ cmd_set() {
 	local pane
 	parse_args "$@"
 	[ "${#POSITIONAL[@]}" -eq 1 ] || die "usage: agent-status set <state> [--pane P] [--agent A]"
-	is_state "${POSITIONAL[0]}" || die "unknown state: ${POSITIONAL[0]} (expected: $AGENT_STATUS_STATES)"
+	is_state "${POSITIONAL[0]}" || die "unknown state: ${POSITIONAL[0]} (expected: $AGENT_STATES)"
 	[ -z "$AGENT_ARG" ] || is_valid_agent_name "$AGENT_ARG" || die "invalid agent name: $AGENT_ARG"
 	pane="$(pane_arg)" || die "no such pane: ${PANE_ARG:-\$TMUX_PANE}"
 	apply_state "$pane" "${POSITIONAL[0]}" "$AGENT_ARG"
@@ -325,64 +266,12 @@ cmd_seen() {
 	parse_args "$@"
 	[ "${#POSITIONAL[@]}" -eq 0 ] || die "usage: agent-status seen [--pane P]"
 	pane="$(pane_arg)" || return 0
-	change_pane "$pane" if-shell -F -t "$pane" \
-		"#{&&:#{==:#{$OPT_STATE},done},#{session_attached}}" "set-option -p -t $pane $OPT_STATE idle"
-}
-
-cmd_jump() {
-	local states current="" st pane_id pane_state target="" found_current panes
-	local -a client_flag=() candidates
-
-	parse_args "$@"
-	[ -z "$CLIENT_ARG" ] || client_flag=(-c "$CLIENT_ARG")
-	if [ "${#POSITIONAL[@]}" -gt 0 ]; then
-		states="${POSITIONAL[*]}"
-	else
-		states="$(get_tmux_option @agent-status-jump-states 'waiting error done')"
-	fi
-	for st in $states; do
-		is_state "$st" || die "unknown state: $st"
-	done
-
-	if [ -n "$CLIENT_ARG" ]; then
-		current="$(tmux display-message -p -c "$CLIENT_ARG" '#{pane_id}' 2>/dev/null)"
-	else
-		current="${TMUX_PANE:-}"
-	fi
-	panes="$(tmux list-panes -a -F "#{pane_id}${US}#{$OPT_STATE}")"
-
-	for st in $states; do
-		candidates=()
-		while IFS="$US" read -r pane_id pane_state; do
-			[ "$pane_state" = "$st" ] || continue
-			case " ${candidates[*]:-} " in *" $pane_id "*) continue ;; esac
-			candidates+=("$pane_id")
-		done <<EOF
-$panes
-EOF
-		[ "${#candidates[@]}" -gt 0 ] || continue
-		# Cycle: the candidate after the current pane, wrapping around.
-		found_current=0
-		for pane_id in "${candidates[@]}"; do
-			if [ "$found_current" = 1 ]; then
-				target="$pane_id"
-				break
-			fi
-			[ "$pane_id" != "$current" ] || found_current=1
-		done
-		target="${target:-${candidates[0]}}"
-		break
-	done
-
-	if [ -z "$target" ]; then
-		tmux display-message ${client_flag[@]+"${client_flag[@]}"} "agent-status: no pane is ${states// / or }"
-		return 0
-	fi
-	tmux switch-client ${client_flag[@]+"${client_flag[@]}"} -t "$target"
+	tmux if-shell -F -t "$pane" \
+		"#{&&:#{==:#{$OPT_AGENT_STATE},done},#{session_attached}}" "set-option -p -t $pane $OPT_AGENT_STATE idle"
 }
 
 cmd_list() {
-	tmux list-panes -a -F "#{pane_id}	#{session_name}:#{window_index}.#{pane_index}	#{$OPT_AGENT}	#{$OPT_STATE}" |
+	tmux list-panes -a -F "#{pane_id}	#{session_name}:#{window_index}.#{pane_index}	#{$OPT_AGENT_NAME}	#{$OPT_AGENT_STATE}" |
 		awk -F '\t' '$4 != "" && !seen[$1]++'
 }
 
@@ -410,8 +299,6 @@ main() {
 	set) cmd_set "$@" ;;
 	clear) cmd_clear "$@" ;;
 	seen) cmd_seen "$@" ;;
-	refresh) refresh_summary ;;
-	jump) cmd_jump "$@" ;;
 	list) cmd_list ;;
 	check) cmd_check "$@" ;;
 	hooks) cmd_hooks "$@" ;;

@@ -8,5 +8,5 @@ charset = utf-8
 [*.{sh,tmux}]
 indent_style = tab
 
-[scripts/agent-status]
+[modules/*/{agent-status,gh-status}]
 indent_style = tab

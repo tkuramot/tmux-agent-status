@@ -1,25 +1,25 @@
 # shellcheck shell=bash disable=SC2034
-# Shared by agent-status.tmux and scripts/agent-status. Keep bash 3.2 compatible.
-
-# Highest priority first.
-AGENT_STATUS_STATES="waiting error working done idle"
+# Shared by pane-status.tmux and the module scripts. Keep bash 3.2 compatible.
 
 # Plugin-written options use `_`; user settings use `-`.
-OPT_STATE="@agent-status_state"
-OPT_AGENT="@agent-status_agent"
-OPT_SUMMARY="@agent-status_summary"
-OPT_TREE_FORMAT="@agent-status_tree_format"
+OPT_TREE_FORMAT="@pane-status_tree_format"
 
-# Plain text in the surrounding colours.
-default_icon() { printf '(%s)' "$1"; }
+# Highest priority first.
+AGENT_STATES="waiting error working done idle"
+OPT_AGENT_STATE="@pane-status_agent_state"
+OPT_AGENT_NAME="@pane-status_agent_name"
 
-# The user's @agent-status-icon-<state> if non-empty, else the default.
-# Defaults are not written to options, so new defaults apply on reload.
-icon_format() {
-	local opt="@agent-status-icon-$1" def rb='}'
-	def="$(default_icon "$1")"
-	def="${def//,/#,}"
-	printf '#{?#{!=:#{%s},},#{%s},%s}' "$opt" "$opt" "${def//$rb/#$rb}"
+GH_STATES="draft review changes approved merged closed"
+GH_CHECKS="failure pending success"
+OPT_GH_NUMBER="@pane-status_gh_number"
+OPT_GH_STATE="@pane-status_gh_state"
+OPT_GH_CHECKS="@pane-status_gh_checks"
+
+# Format for user option $1 if non-empty, else the literal $2. Defaults are
+# not written to options, so new defaults apply on reload.
+option_format() {
+	local rb='}' def="${2//,/#,}"
+	printf '#{?#{!=:#{%s},},#{%s},%s}' "$1" "$1" "${def//$rb/#$rb}"
 }
 
 get_tmux_option() {

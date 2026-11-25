@@ -1,54 +1,41 @@
-# tmux-agent-status
+# tmux-pane-status
 
-Show what your AI coding agents are doing — waiting for approval, working,
-finished — in the tmux status line, per pane, per window and in total.
-
-The agent reports state changes through its own hooks, so nothing is polled:
-the status line reads tmux options that change only when something happens.
+Show the state of what runs in each tmux pane — your AI coding agent and the
+pull request of the branch checked out there — in the status line, pane
+borders and `choose-tree`.
 
 ```
-0 zsh  1 api (waiting)  2 web (working)  3 docs (done)  4 sh (idle)    (waiting)1 (working)1 (done)1
+0 zsh  1 api (waiting)  2 web (working) #42 review ✗  3 docs #40 merged
 ```
 
-## How it works
+Scope: per-pane state only. Browsing and acting on pull requests is left to
+`gh` and tools such as [gh-dash](https://github.com/dlvhdr/gh-dash).
 
-There are three layers, and only the adapter knows anything about a
-particular agent:
+## Modules
 
-| Layer | File | Role |
+| Module | Shows | Updated by |
 | --- | --- | --- |
-| Core | `scripts/agent-status` | Agent-agnostic CLI. Stores each pane's state in a pane option and keeps the server-wide summary. |
-| Adapter | `adapters/<agent>/map` | The only agent-specific file: maps the agent's events to states, and generates the agent's hook settings. |
-| Plugin | `agent-status.tmux` | Expands the `#{agent_*}` placeholders and registers tmux hooks. |
+| `agent` | What the agent in the pane is doing. | The agent's own hooks; nothing is polled. |
+| `gh` | The pull request of the pane's branch and its checks. | `gh`, polled on `status-interval` and cached. |
 
-Window state is computed by tmux from the window's panes at draw time, and
-state changes are compare-and-set operations inside tmux, so concurrent hooks
-cannot leave stale values behind.
+Both are enabled by default. Choose with `@pane-status-modules`:
 
-States, highest priority first (a window shows the highest state of its panes):
-
-| State | Meaning |
-| --- | --- |
-| `waiting` | The agent needs you (e.g. a permission prompt). |
-| `error` | The agent stopped on an error. |
-| `working` | The agent is busy. |
-| `done` | The agent finished and you have not looked at the pane yet. |
-| `idle` | The agent is running and waiting for input. |
-
-A `done` pane becomes `idle` when you switch to it, or immediately if it is
-already the visible pane (see `@agent-status-auto-seen`).
+```tmux
+set -g @pane-status-modules 'agent'
+```
 
 ## Requirements
 
 - tmux 3.8 or later
 - bash 3.2 or later (the macOS system bash works)
+- `gh`, authenticated, for the `gh` module
 
 ## Installation
 
 ### With [TPM](https://github.com/tmux-plugins/tpm)
 
 ```tmux
-set -g @plugin 'tkuramot/tmux-agent-status'
+set -g @plugin 'tkuramot/tmux-pane-status'
 ```
 
 Press `prefix + I` to install.
@@ -56,60 +43,115 @@ Press `prefix + I` to install.
 ### Manually
 
 ```sh
-git clone https://github.com/tkuramot/tmux-agent-status ~/.tmux/plugins/tmux-agent-status
+git clone https://github.com/tkuramot/tmux-pane-status ~/.tmux/plugins/tmux-pane-status
 ```
 
 ```tmux
-run-shell ~/.tmux/plugins/tmux-agent-status/agent-status.tmux
+run-shell ~/.tmux/plugins/tmux-pane-status/pane-status.tmux
 ```
 
 Set the formats that use the placeholders **before** the plugin is loaded
-(before `run '~/.tmux/plugins/tpm/tpm'`).
+(before `run '~/.tmux/plugins/tpm/tpm'`), and after any theme that sets them.
 
-## Status line
+## Placeholders
 
 ```tmux
 set -g window-status-format         '#I #W#{?#{agent_state}, #{agent_status},}'
 set -g window-status-current-format '#I #W#{?#{agent_state}, #{agent_status},}'
-set -g status-right '#{agent_summary}'
+set -g pane-border-status top
+set -g pane-border-format ' #{agent_pane_status} #{gh_status} '
 ```
 
 | Placeholder | Expands to |
 | --- | --- |
-| `#{agent_status}` | Icon for the window's aggregate state. |
-| `#{agent_state}` | The window's aggregate state name (empty if no agent). |
-| `#{agent_pane_status}` | Icon for the pane's state (for `pane-border-format`). |
-| `#{agent_pane_state}` | The pane's state name. |
-| `#{agent_summary}` | Icon and count per state across the server, e.g. `(waiting)1 (working)2`. |
+| `#{agent_status}` | Icon for the window's agent state (the highest of its panes). |
+| `#{agent_state}` | That state's name (empty if no agent). |
+| `#{agent_pane_status}` | Icon for the pane's agent state. |
+| `#{agent_pane_state}` | The pane's agent state name. |
+| `#{gh_status}` | `#<number> <state> <checks>` for the pane's pull request, e.g. `#42 review ✗`. |
+| `#{gh_state}` | The pull request state name (empty if none). |
+
+In window formats, `gh_*` refers to the window's active pane.
 
 Placeholders are expanded in the **global** values of `status-left`,
 `status-right`, `window-status-format`, `window-status-current-format` and
-`pane-border-format`; session or window-local values are left alone. The state names work in conditionals, for example to
-highlight windows waiting for approval:
+`pane-border-format`; session or window-local values are left alone. State
+names work in conditionals:
 
 ```tmux
 set -g window-status-format '#{?#{==:#{agent_state},waiting},#[bg=red],}#I #W'
 ```
 
-## Session and window tree
+## States
 
-`prefix s` and `prefix w` (`choose-tree`) show each session's, window's and
-pane's state after its name. The plugin rebinds these keys only while they
-have tmux's default binding; set `@agent-status-choose-tree` to `off` to keep
-tmux's own format. For your own `choose-tree` bindings, use the same format:
+Each state is shown by its icon, `@pane-status-<module>-icon-<state>`. Unset
+or empty means the default.
+
+| Module | State | Meaning | Default icon |
+| --- | --- | --- | --- |
+| agent | `waiting` | The agent needs you (e.g. a permission prompt). | `(waiting)` |
+| agent | `error` | The agent stopped on an error. | `(error)` |
+| agent | `working` | The agent is busy. | `(working)` |
+| agent | `done` | The agent finished and you have not looked at the pane yet. | `(done)` |
+| agent | `idle` | The agent is running and waiting for input. | `(idle)` |
+| gh | `draft` | Draft pull request. | `draft` |
+| gh | `review` | Open, not yet approved. | `review` |
+| gh | `changes` | Changes requested. | `changes` |
+| gh | `approved` | Approved. | `approved` |
+| gh | `merged` | Merged. | `merged` |
+| gh | `closed` | Closed without merging. | `closed` |
+| gh | `failure` | A check failed, errored, timed out or was cancelled. | `✗` |
+| gh | `pending` | No check failed and some are still running. | `…` |
+| gh | `success` | Every check passed or was skipped. | `✓` |
+
+Agent states are listed highest priority first; a window shows the highest
+state of its panes. Checks are shown for open pull requests that have any.
 
 ```tmux
-bind-key s choose-tree -s -F '#{E:@agent-status_tree_format}'
+set -g @pane-status-agent-icon-waiting '#[fg=red]?#[fg=default]'
+set -g @pane-status-gh-icon-review 'in review'
 ```
 
-## Agents
+Icon changes apply on the next redraw. To hide a state, set its icon to `#[]`.
+
+- Agent defaults differ from tmux's window flags (`*`, `-`, `#`, `!`, `~`,
+  `M`, `Z`) and use the surrounding colours, so they blend into any theme.
+- For your own icons, end with the matching `no...` attribute or wrap colours
+  in `#[push-default]` ... `#[default]#[pop-default]`, rather than
+  `#[default]`, which resets to the status line style.
+
+## Session and window tree
+
+`prefix s` and `prefix w` (`choose-tree`) show each row's agent state and
+pull request after its name. The plugin rebinds these keys only while they
+have tmux's default binding; set `@pane-status-choose-tree` to `off` to keep
+tmux's own format. For your own `choose-tree` bindings:
+
+```tmux
+bind-key s choose-tree -s -F '#{E:@pane-status_tree_format}'
+```
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `@pane-status-modules` | `agent gh` | Enabled modules. |
+| `@pane-status-choose-tree` | `on` | Show states in `prefix s` / `prefix w`. |
+| `@pane-status-<module>-icon-<state>` | see [States](#states) | Icon for a state. |
+| `@pane-status-agent-auto-seen` | `on` | Turn `done` into `idle` once the pane is viewed in an attached session. |
+| `@pane-status-gh-ttl` | `60` | Seconds a pull request lookup is cached. |
+
+## agent module
+
+The agent reports state changes through its hooks. Only the adapter,
+`modules/agent/adapters/<agent>/map`, knows anything about a particular agent.
 
 ### Claude Code
 
-Hook settings are generated from the adapter map. Print them:
+Print the hook settings generated from the adapter map:
 
 ```sh
-~/.tmux/plugins/tmux-agent-status/scripts/agent-status hooks claude-code
+~/.tmux/plugins/tmux-pane-status/modules/agent/agent-status hooks claude-code
 ```
 
 Merge them into `~/.claude/settings.json` with `jq`. Your other hooks keep
@@ -117,17 +159,17 @@ their order, entries from a previous install (any path) are replaced, and a
 symlinked file stays a symlink:
 
 ```sh
-AS=~/.tmux/plugins/tmux-agent-status/scripts/agent-status
+AS=~/.tmux/plugins/tmux-pane-status/modules/agent/agent-status
 f=~/.claude/settings.json
 [ -f "$f" ] || echo '{}' >"$f"
 merge='
-  def ours: any(.hooks[]?; .command | contains("/scripts/agent-status"));
+  def ours: any(.hooks[]?; .command | test("/(scripts|modules/agent)/agent-status"));
   .hooks = ((.hooks // {}) | map_values(map(select(ours | not))) as $kept
     | reduce ($new.hooks | keys[]) as $k ($kept; .[$k] = ((.[$k] // []) + $new.hooks[$k])))'
 new="$(jq --argjson new "$("$AS" hooks claude-code)" "$merge" "$f")" && printf '%s\n' "$new" >"$f"
 ```
 
-Event mapping (`adapters/claude-code/map`):
+Event mapping (`modules/agent/adapters/claude-code/map`):
 
 | Claude Code event | State |
 | --- | --- |
@@ -140,15 +182,14 @@ Event mapping (`adapters/claude-code/map`):
 
 - `SessionStart` with `compact` is not hooked because it can fire mid-turn.
 - Interrupting Claude with Esc fires no hook (not even `idle_prompt` later),
-  so the pane stays `working` until the next prompt. Detecting it would need
-  polling, which this plugin avoids.
+  so the pane stays `working` until the next prompt.
 - Subagents report through the same pane: while a background subagent runs
   after the main turn has ended, the pane shows `working`.
 
 ### Adding another agent
 
-1. Create `~/.config/tmux-agent-status/adapters/<agent>/map` (or
-   `adapters/<agent>/map` in this repository to contribute it):
+1. Create `~/.config/tmux-pane-status/adapters/<agent>/map` (or
+   `modules/agent/adapters/<agent>/map` in this repository to contribute it):
 
    ```
    # <event>[:<matcher>] <state|clear> [<from-state>,...]
@@ -167,19 +208,13 @@ Event mapping (`adapters/claude-code/map`):
      `Bash` and `Bash|Edit`.
    - A user map replaces the built-in map of the same name.
 
-   Validate it with `agent-status check <agent>`. This matters because `emit`
-   ignores invalid entries silently.
+   Validate it with `agent-status check <agent>`: `emit` ignores invalid
+   entries silently.
 
 2. Call `agent-status emit <agent> <event>` from the agent's hooks.
-   `agent-status hooks <agent>` prints Claude Code style settings; for other
-   agents, wire the calls up in whatever form the agent expects.
 
 `emit` is safe inside any agent's hook: it drains stdin without waiting for it
 to close, prints nothing and always exits 0. Outside tmux it does nothing.
-
-Why a plain text map rather than JSON or YAML: `emit` runs on every hook, and
-this format is read by bash alone with no `jq`/`yq` dependency or startup
-cost, while staying easy to diff and grep.
 
 Agents without hooks can be wrapped and set states directly:
 
@@ -189,85 +224,65 @@ my-agent "$@"; rc=$?
 if [ "$rc" -eq 0 ]; then agent-status set done; else agent-status set error; fi
 ```
 
-## Options
-
-| Option | Default | Description |
-| --- | --- | --- |
-| `@agent-status-icon-waiting` | `(waiting)` | Icon for `waiting`. |
-| `@agent-status-icon-error` | `(error)` | Icon for `error`. |
-| `@agent-status-icon-working` | `(working)` | Icon for `working`. |
-| `@agent-status-icon-done` | `(done)` | Icon for `done`. |
-| `@agent-status-icon-idle` | `(idle)` | Icon for `idle`. |
-| `@agent-status-summary-states` | `waiting error working done` | States counted in `#{agent_summary}`, in order. |
-| `@agent-status-summary-separator` | ` ` (space) | Separator between summary entries. |
-| `@agent-status-auto-seen` | `on` | Turn `done` into `idle` once the pane is viewed in an attached session. |
-| `@agent-status-jump-key` | *(unset)* | Key (after prefix) bound to `jump`. It replaces any existing binding of that key, and is not unbound if the option is removed later. |
-| `@agent-status-choose-tree` | `on` | Show states in `prefix s` / `prefix w` (see [Session and window tree](#session-and-window-tree)). |
-| `@agent-status-jump-states` | `waiting error done` | States `jump` looks for, in order. |
-
-Icon changes apply on the next redraw. An empty value means the default; to
-hide a state, set its icon to `#[]`.
-
-About the defaults:
-
-- Icons are the state names, so they need no legend, and parentheses match
-  tmux's own `(attached)` in the `choose-tree` list.
-- Icons use the surrounding colours, so they blend into any theme with the
-  same contrast as the rest of the status line. In the `choose-tree` list
-  they use the normal text colour rather than the grey of the row details.
-- States differ by name, so colour is never needed to tell them apart.
-- For your own icons, end with the matching `no...` attribute or wrap
-  colours in `#[push-default]` ... `#[default]#[pop-default]`, rather than
-  `#[default]`, which resets to the status line style.
-- Avoid `bold` with a black foreground: many terminals draw bold black as
-  grey.
-
-## CLI
-
-The CLI is `scripts/agent-status` in the plugin directory. Hooks generated by
-`agent-status hooks` use its absolute path, so putting it on `PATH` is only
-needed for running it by hand or from your own scripts:
-
-```sh
-mkdir -p ~/.local/bin
-ln -s ~/.tmux/plugins/tmux-agent-status/scripts/agent-status ~/.local/bin/agent-status
-```
-
-Use a symlink, not a copy: the script finds its helpers and adapters relative
-to its real location. Make sure `~/.local/bin` is on your `PATH`.
+### CLI
 
 ```
 agent-status emit <agent> <event>                  # from agent hooks
 agent-status set <state> [--pane P] [--agent A]
 agent-status clear [--pane P]
 agent-status seen [--pane P]
-agent-status refresh
-agent-status jump [--client C] [state...]
 agent-status list
 agent-status check <agent>
 agent-status hooks <agent>
 ```
 
-`--pane` defaults to `$TMUX_PANE`. `jump` switches to a pane in the first of
-the given states that has any, cycling through panes on repeated use.
+`--pane` defaults to `$TMUX_PANE`. To run it by hand, symlink it onto your
+`PATH` (a copy cannot find its adapters):
+
+```sh
+ln -s ~/.tmux/plugins/tmux-pane-status/modules/agent/agent-status ~/.local/bin/agent-status
+```
+
+## gh module
+
+`choose-tree` lists every pane, so one job refreshes them all: the plugin
+appends `#(…/gh-status tick)`, which prints nothing, to the global
+`status-right`. Each tick resolves every pane's repository and branch, reads
+the cache, and looks up stale entries with `gh pr view` in the background.
+One lookup per repository and branch is made per `@pane-status-gh-ttl`,
+however many panes share it.
+
+Merged and closed pull requests are still found for their branch, so a pane
+shows `merged` until you switch branches.
+
+To browse pull requests of a pane's repository, open gh-dash in a popup; it
+filters to the repository of the directory it starts in:
+
+```tmux
+bind g display-popup -E -w 90% -h 90% -d '#{pane_current_path}' gh-dash
+```
 
 ## Limitations
 
-- The pane is identified through `$TMUX_PANE`. Agents that do not pass the
-  environment to their hooks (some sandboxes, or an agent running over
+- agent: the pane is identified through `$TMUX_PANE`. Agents that do not pass
+  the environment to their hooks (some sandboxes, or an agent running over
   `ssh`) cannot report state.
-- If an agent exits without its end event (a crash, `kill -9`), the last
-  state stays until the pane closes. Clear it with
+- agent: if an agent exits without its end event (a crash, `kill -9`), the
+  last state stays until the pane closes. Clear it with
   `agent-status clear --pane %N`.
-- State is per pane, not per tool call: with parallel tools or subagents, a
-  tool finishing while a permission prompt is open switches the pane back to
-  `working`.
+- agent: state is per pane, not per tool call: with parallel tools or
+  subagents, a tool finishing while a permission prompt is open switches the
+  pane back to `working`.
+- gh: updates stop while no client shows a status line (`status off`), and a
+  theme that later overwrites `status-right` drops the refresh job.
+- gh: a failed lookup (offline, not authenticated) shows nothing until the
+  next lookup.
 - The install path must not contain `'`, `"`, `$`, `\`, `` ` `` or `#`.
 
 ## Development
 
 ```sh
-tests/run.sh   # runs against a private tmux server
+tests/run.sh   # runs against a private tmux server; gh tests need jq and git
 ```
 
 ## License
