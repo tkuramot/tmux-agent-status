@@ -79,6 +79,7 @@ t set-option -g pane-border-format '#{agent_pane_state}|#{agent_pane_status}'
 "$PLUGIN"
 first_load="$(t show-option -gqv window-status-format)"
 "$PLUGIN"
+assert_eq "re-loading the plugin succeeds" 0 "$?"
 
 assert_eq "placeholders are interpolated" "" "$(t show-option -gqv window-status-format | grep -F '#{agent_')"
 assert_eq "re-loading the plugin is idempotent" "$first_load" "$(t show-option -gqv window-status-format)"

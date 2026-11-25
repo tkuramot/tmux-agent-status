@@ -114,8 +114,9 @@ bind_tree_keys() {
 		note="Choose a ${kw#*:} from a list"
 		read -r -a words <<<"$(tmux list-keys -T prefix "$key" 2>/dev/null)"
 		if [ "$enabled" != off ]; then
-			[ "${words[*]:4}" = "choose-tree -Z$key" ] &&
+			if [ "${words[*]:4}" = "choose-tree -Z$key" ]; then
 				tmux bind-key -N "$note" "$key" choose-tree "-Z$key" -F "#{E:$OPT_TREE_FORMAT}"
+			fi
 		elif [ "${words[*]:4}" = "choose-tree -Z$key -F \"#{E:$OPT_TREE_FORMAT}\"" ]; then
 			tmux bind-key -N "$note" "$key" choose-tree "-Z$key"
 		fi
