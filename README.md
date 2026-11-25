@@ -7,7 +7,7 @@ The agent reports state changes through its own hooks, so nothing is polled:
 the status line reads tmux options that change only when something happens.
 
 ```
-0 zsh  1 api ?  2 web >  3 docs +  4 sh o            ?1 >1 +1
+0 zsh  1 api (waiting)  2 web (working)  3 docs (done)  4 sh (idle)    (waiting)1 (working)1 (done)1
 ```
 
 ## How it works
@@ -80,7 +80,7 @@ set -g status-right '#{agent_summary}'
 | `#{agent_state}` | The window's aggregate state name (empty if no agent). |
 | `#{agent_pane_status}` | Icon for the pane's state (for `pane-border-format`). |
 | `#{agent_pane_state}` | The pane's state name. |
-| `#{agent_summary}` | Icon and count per state across the server, e.g. `?1 >2`. |
+| `#{agent_summary}` | Icon and count per state across the server, e.g. `(waiting)1 (working)2`. |
 
 Placeholders are expanded in the **global** values of `status-left`,
 `status-right`, `window-status-format`, `window-status-current-format` and
@@ -193,11 +193,11 @@ if [ "$rc" -eq 0 ]; then agent-status set done; else agent-status set error; fi
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `@agent-status-icon-waiting` | `?` | Icon for `waiting`. |
-| `@agent-status-icon-error` | `x` | Icon for `error`. |
-| `@agent-status-icon-working` | `>` | Icon for `working`. |
-| `@agent-status-icon-done` | `+` | Icon for `done`. |
-| `@agent-status-icon-idle` | `o` | Icon for `idle`. |
+| `@agent-status-icon-waiting` | `(waiting)` | Icon for `waiting`. |
+| `@agent-status-icon-error` | `(error)` | Icon for `error`. |
+| `@agent-status-icon-working` | `(working)` | Icon for `working`. |
+| `@agent-status-icon-done` | `(done)` | Icon for `done`. |
+| `@agent-status-icon-idle` | `(idle)` | Icon for `idle`. |
 | `@agent-status-summary-states` | `waiting error working done` | States counted in `#{agent_summary}`, in order. |
 | `@agent-status-summary-separator` | ` ` (space) | Separator between summary entries. |
 | `@agent-status-auto-seen` | `on` | Turn `done` into `idle` once the pane is viewed in an attached session. |
@@ -210,12 +210,12 @@ hide a state, set its icon to `#[]`.
 
 About the defaults:
 
-- Glyphs differ from tmux's window flags (`*`, `-`, `#`, `!`, `~`, `M`, `Z`),
-  and avoid `_` and `.`, which the current window's underline hides.
+- Icons are the state names, so they need no legend, and parentheses match
+  tmux's own `(attached)` in the `choose-tree` list.
 - Icons use the surrounding colours, so they blend into any theme with the
   same contrast as the rest of the status line. In the `choose-tree` list
   they use the normal text colour rather than the grey of the row details.
-- States differ by glyph, so colour is never needed to tell them apart.
+- States differ by name, so colour is never needed to tell them apart.
 - For your own icons, end with the matching `no...` attribute or wrap
   colours in `#[push-default]` ... `#[default]#[pop-default]`, rather than
   `#[default]`, which resets to the status line style.

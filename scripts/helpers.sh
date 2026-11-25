@@ -10,17 +10,8 @@ OPT_AGENT="@agent-status_agent"
 OPT_SUMMARY="@agent-status_summary"
 OPT_TREE_FORMAT="@agent-status_tree_format"
 
-# Plain glyphs in the surrounding colours. Avoid window flags (* - # ! ~ M Z),
-# and _ or . which the current window's underline hides.
-default_icon() {
-	case "$1" in
-	waiting) printf '?' ;;
-	error) printf 'x' ;;
-	working) printf '>' ;;
-	done) printf '+' ;;
-	idle) printf 'o' ;;
-	esac
-}
+# Plain text in the surrounding colours.
+default_icon() { printf '(%s)' "$1"; }
 
 # The user's @agent-status-icon-<state> if non-empty, else the default.
 # Defaults are not written to options, so new defaults apply on reload.

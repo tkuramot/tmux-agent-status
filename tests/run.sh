@@ -153,7 +153,7 @@ assert_eq "Stop in a detached session is done" "done" "$(pane_state "$P2")"
 TMUX_PANE="$P2" "$AS" emit cond Calm </dev/null
 assert_eq "conditional action skips other states" "done" "$(pane_state "$P2")"
 rm -rf "$XDG_CONFIG_HOME/tmux-agent-status"
-assert_eq "unset icons render the default" "R1 +1" "$(summary)"
+assert_eq "unset icons render the default" "R1 (done)1" "$(summary)"
 t set-option -g @agent-status-icon-done D
 assert_eq "icon changes apply without a refresh" "R1 D1" "$(summary)"
 
