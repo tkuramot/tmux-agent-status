@@ -64,7 +64,8 @@ emit() { in_pane "$1" emit claude-code "$2" </dev/null; }
 # --- setup ----------------------------------------------------------------
 
 t -f /dev/null new-session -d -s test -x 120 -y 40
-export TMUX="$SOCKET,$(t display-message -p '#{pid}'),0"
+SERVER_PID="$(t display-message -p '#{pid}')"
+export TMUX="$SOCKET,$SERVER_PID,0"
 P1="$(t display-message -p -t test '#{pane_id}')"
 W1="$(t display-message -p -t test '#{window_id}')"
 P2="$(t split-window -d -P -F '#{pane_id}' -t "$P1")"
@@ -105,9 +106,14 @@ start=$(date +%s)
 TMUX_PANE="$P1" "$AS" emit claude-code NoSuchEvent <"$WORK/stdin"
 assert_eq "emit does not wait for stdin to close" 1 "$(($(date +%s) - start < 4))"
 exec 4>&-
+# Time emit alone: a pipeline would also wait for the writer.
+mkfifo "$WORK/trickle"
+(for _ in 1 2 3 4 5 6 7 8 9 10; do printf '{}\n'; sleep 0.5; done) >"$WORK/trickle" 2>/dev/null &
+writer=$!
 start=$(date +%s)
-for _ in 1 2 3 4 5 6 7 8; do printf '{}\n'; sleep 0.5; done | in_pane "$P1" emit claude-code NoSuchEvent
+TMUX_PANE="$P1" "$AS" emit claude-code NoSuchEvent <"$WORK/trickle"
 assert_eq "emit stops draining a trickling stdin at its deadline" 1 "$(($(date +%s) - start < 4))"
+kill "$writer" 2>/dev/null; wait "$writer" 2>/dev/null
 out="$(env -u HOME -u XDG_CONFIG_HOME TMUX_PANE="$P1" "$AS" emit claude-code NoSuchEvent </dev/null 2>&1)"
 assert_eq "emit without HOME is a silent no-op" "0:" "$?:$out"
 
@@ -129,13 +135,13 @@ assert_eq "summary lists states in priority order" "A1 R1" "$(summary)"
 emit "$P2" Notification:idle_prompt
 assert_eq "conditional action applies from a listed state" idle "$(pane_state "$P2")"
 emit "$P2" Stop
-assert_eq "Stop in a detached session is done" done "$(pane_state "$P2")"
+assert_eq "Stop in a detached session is done" "done" "$(pane_state "$P2")"
 emit "$P2" Notification:idle_prompt
-assert_eq "conditional action skips other states" done "$(pane_state "$P2")"
+assert_eq "conditional action skips other states" "done" "$(pane_state "$P2")"
 assert_eq "summary follows" "R1 D1" "$(summary)"
 
 "$AS" seen --pane "$P2"
-assert_eq "seen ignores detached sessions" done "$(pane_state "$P2")"
+assert_eq "seen ignores detached sessions" "done" "$(pane_state "$P2")"
 
 emit "$P1" 'SessionEnd:logout|prompt_input_exit|other'
 assert_eq "SessionEnd clears the pane" "" "$(pane_state "$P1")"
@@ -214,7 +220,7 @@ t set-option -gu remain-on-exit
 
 P5="$(t split-window -d -P -F '#{pane_id}' -t "$P1")"
 P6="$(t split-window -d -P -F '#{pane_id}' -t "$P1")"
-for i in 1 2 3 4 5 6 7 8; do
+for _ in 1 2 3 4 5 6 7 8; do
 	for p in "$P1" "$P5" "$P6"; do
 		emit "$p" UserPromptSubmit &
 		emit "$p" Notification:permission_prompt &
@@ -237,23 +243,23 @@ CONTROL_PID=$!
 exec 3>"$WORK/control.in"
 eventually_eq "control client attached" 1 t display-message -p -t test '#{session_attached}'
 CLIENT="$(t list-clients -F '#{client_name}' | head -n 1)"
-current_pane() { t display-message -p -c "$CLIENT" '#{pane_id}'; }
+current_pane() { t list-clients -F '#{client_name} #{pane_id}' | awk -v c="$CLIENT" '$1 == c { print $2 }'; }
 
 emit "$P1" Stop
 assert_eq "Stop on the visible pane is already seen" idle "$(pane_state "$P1")"
 P8="$(t split-window -d -P -F '#{pane_id}' -t "$P1")"
 emit "$P8" Stop
-assert_eq "Stop on an inactive pane of the visible window is done" done "$(pane_state "$P8")"
+assert_eq "Stop on an inactive pane of the visible window is done" "done" "$(pane_state "$P8")"
 t select-pane -t "$P8"
 eventually_eq "selecting a done pane marks it seen" idle pane_state "$P8"
 t kill-pane -t "$P8"
 t set-option -g @agent-status-auto-seen off
 emit "$P1" Stop
-assert_eq "auto-seen off keeps done on the visible pane" done "$(pane_state "$P1")"
-"$AS" set done --pane "$P3"
+assert_eq "auto-seen off keeps done on the visible pane" "done" "$(pane_state "$P1")"
+"$AS" set "done" --pane "$P3"
 t select-window -t "$P3"
 sleep 0.3
-assert_eq "auto-seen off keeps done after switching to it" done "$(pane_state "$P3")"
+assert_eq "auto-seen off keeps done after switching to it" "done" "$(pane_state "$P3")"
 t select-window -t "$W1"
 "$AS" clear --pane "$P3"
 t set-option -gu @agent-status-auto-seen
@@ -267,7 +273,7 @@ first="$(current_pane)"
 case "$first" in "$P3" | "$P7") r=ok ;; *) r="$first" ;; esac
 assert_eq "jump switches to a done pane" ok "$r"
 eventually_eq "switching to a done pane marks it seen" idle pane_state "$first"
-"$AS" set done --pane "$first"
+"$AS" set "done" --pane "$first"
 assert_eq "set done on the visible pane is seen" idle "$(pane_state "$first")"
 
 "$AS" set waiting --pane "$P3"

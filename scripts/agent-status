@@ -106,7 +106,7 @@ apply_state() {
 		done
 	fi
 	value="$state"
-	[ "$state" != done ] ||
+	[ "$state" != "done" ] ||
 		value="#{?#{==:#{@agent-status-auto-seen},off},done,#{?$VISIBLE_FORMAT,idle,done}}"
 	cmd="set-option -pF -t $pane $OPT_STATE \"$value\""
 	[ -z "$agent" ] || cmd="$cmd ; set-option -p -t $pane $OPT_AGENT $agent"
@@ -338,7 +338,9 @@ cmd_jump() {
 	done
 
 	if [ -n "$CLIENT_ARG" ]; then
-		current="$(tmux display-message -p -c "$CLIENT_ARG" '#{pane_id}' 2>/dev/null)"
+		# `display-message -p -c` prints to that client on tmux 3.2.
+		current="$(tmux list-clients -F "#{client_name}${US}#{pane_id}" |
+			awk -F "$US" -v c="$CLIENT_ARG" '$1 == c { print $2 }')"
 	else
 		current="${TMUX_PANE:-}"
 	fi
