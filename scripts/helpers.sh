@@ -10,15 +10,15 @@ OPT_AGENT="@agent-status_agent"
 OPT_SUMMARY="@agent-status_summary"
 OPT_TREE_FORMAT="@agent-status_tree_format"
 
-# Avoid window flags (* - # ! ~ M Z), and _ or . which the current window's
-# underline hides. Each icon undoes only its own style, keeping the user's.
+# Plain glyphs in the surrounding colours. Avoid window flags (* - # ! ~ M Z),
+# and _ or . which the current window's underline hides.
 default_icon() {
 	case "$1" in
-	waiting) printf '%s' '#[reverse]?#[noreverse]' ;;
-	error) printf '%s' '#[push-default]#[fg=white,bg=red]x#[default]#[pop-default]' ;;
-	working) printf '%s' '>' ;;
-	done) printf '%s' '+' ;;
-	idle) printf '%s' '#[dim]o#[nodim]' ;;
+	waiting) printf '?' ;;
+	error) printf 'x' ;;
+	working) printf '>' ;;
+	done) printf '+' ;;
+	idle) printf 'o' ;;
 	esac
 }
 

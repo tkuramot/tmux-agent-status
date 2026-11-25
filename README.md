@@ -40,7 +40,7 @@ already the visible pane (see `@agent-status-auto-seen`).
 
 ## Requirements
 
-- tmux 3.2 or later
+- tmux 3.8 or later
 - bash 3.2 or later (the macOS system bash works)
 
 ## Installation
@@ -101,9 +101,6 @@ tmux's own format. For your own `choose-tree` bindings, use the same format:
 ```tmux
 bind-key s choose-tree -s -F '#{E:@agent-status_tree_format}'
 ```
-
-The format is tmux 3.2's default tree format with the state appended, so
-styling and pane flags added in later tmux versions are not shown.
 
 ## Agents
 
@@ -196,11 +193,11 @@ if [ "$rc" -eq 0 ]; then agent-status set done; else agent-status set error; fi
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `@agent-status-icon-waiting` | `#[reverse]?#[noreverse]` | Icon for `waiting`. |
-| `@agent-status-icon-error` | `#[push-default]#[fg=white,bg=red]x#[default]#[pop-default]` | Icon for `error`. |
+| `@agent-status-icon-waiting` | `?` | Icon for `waiting`. |
+| `@agent-status-icon-error` | `x` | Icon for `error`. |
 | `@agent-status-icon-working` | `>` | Icon for `working`. |
 | `@agent-status-icon-done` | `+` | Icon for `done`. |
-| `@agent-status-icon-idle` | `#[dim]o#[nodim]` | Icon for `idle`. |
+| `@agent-status-icon-idle` | `o` | Icon for `idle`. |
 | `@agent-status-summary-states` | `waiting error working done` | States counted in `#{agent_summary}`, in order. |
 | `@agent-status-summary-separator` | ` ` (space) | Separator between summary entries. |
 | `@agent-status-auto-seen` | `on` | Turn `done` into `idle` once the pane is viewed in an attached session. |
@@ -215,17 +212,13 @@ About the defaults:
 
 - Glyphs differ from tmux's window flags (`*`, `-`, `#`, `!`, `~`, `M`, `Z`),
   and avoid `_` and `.`, which the current window's underline hides.
-- `waiting` swaps the status line's own colours, so it stands out on any
-  theme. `error` is white on red.
-- `working`, `done` and `idle` use the status line's colours. `idle` is dimmed,
-  so its contrast is lower (and some terminals ignore dim); it is the least
-  important state.
+- Icons use the surrounding colours, so they blend into any theme with the
+  same contrast as the rest of the status line. In the `choose-tree` list
+  they use the normal text colour rather than the grey of the row details.
 - States differ by glyph, so colour is never needed to tell them apart.
-- Each icon undoes only the style it sets, so styles you apply around
-  `#{agent_status}` carry on after it. For your own icons, end with the
-  matching `no...` attribute or wrap colours in `#[push-default]` ...
-  `#[default]#[pop-default]`, rather than `#[default]`, which resets to the
-  status line style.
+- For your own icons, end with the matching `no...` attribute or wrap
+  colours in `#[push-default]` ... `#[default]#[pop-default]`, rather than
+  `#[default]`, which resets to the status line style.
 - Avoid `bold` with a black foreground: many terminals draw bold black as
   grey.
 

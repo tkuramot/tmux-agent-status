@@ -135,7 +135,7 @@ assert_eq "agent is recorded" claude-code "$(t display-message -p -t "$P1" '#{@a
 assert_eq "pane format renders state and icon" "working|R" "$(pane_border "$P1")"
 assert_eq "window derives from its panes" "working|R" "$(window_state "$W1")"
 assert_eq "summary counts the pane" R1 "$(summary)"
-case "$(t display-message -p -t "$P1" '#{E:@agent-status_tree_format}')" in *"* R"*) r=ok ;; *) r=no ;; esac
+case "$(t display-message -p -t "$P1" '#{E:@agent-status_tree_format}')" in *" #[fg=default]R#[fg=themelightgrey]"*) r=ok ;; *) r=no ;; esac
 assert_eq "tree format shows the pane state" ok "$r"
 
 emit "$P2" Notification:permission_prompt
@@ -260,7 +260,7 @@ CONTROL_PID=$!
 exec 3>"$WORK/control.in"
 eventually_eq "control client attached" 1 t display-message -p -t test '#{session_attached}'
 CLIENT="$(t list-clients -F '#{client_name}' | head -n 1)"
-current_pane() { t list-clients -F '#{client_name} #{pane_id}' | awk -v c="$CLIENT" '$1 == c { print $2 }'; }
+current_pane() { t display-message -p -c "$CLIENT" '#{pane_id}'; }
 
 emit "$P1" Stop
 assert_eq "Stop on the visible pane is already seen" idle "$(pane_state "$P1")"

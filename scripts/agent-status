@@ -345,9 +345,7 @@ cmd_jump() {
 	done
 
 	if [ -n "$CLIENT_ARG" ]; then
-		# `display-message -p -c` prints to that client on tmux 3.2.
-		current="$(tmux list-clients -F "#{client_name}${US}#{pane_id}" |
-			awk -F "$US" -v c="$CLIENT_ARG" '$1 == c { print $2 }')"
+		current="$(tmux display-message -p -c "$CLIENT_ARG" '#{pane_id}' 2>/dev/null)"
 	else
 		current="${TMUX_PANE:-}"
 	fi
