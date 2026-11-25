@@ -7,7 +7,7 @@ The agent reports state changes through its own hooks, so nothing is polled:
 the status line reads tmux options that change only when something happens.
 
 ```
-0 zsh  1 api !  2 web *  3 docs +                  !1 *1 +1
+0 zsh  1 api ?  2 web >  3 docs +                  ?1 >1 +1
 ```
 
 ## How it works
@@ -80,7 +80,7 @@ set -g status-right '#{agent_summary}'
 | `#{agent_state}` | The window's aggregate state name (empty if no agent). |
 | `#{agent_pane_status}` | Icon for the pane's state (for `pane-border-format`). |
 | `#{agent_pane_state}` | The pane's state name. |
-| `#{agent_summary}` | Icon and count per state across the server, e.g. `!1 *2`. |
+| `#{agent_summary}` | Icon and count per state across the server, e.g. `?1 >2`. |
 
 Placeholders are expanded in the **global** values of `status-left`,
 `status-right`, `window-status-format`, `window-status-current-format` and
@@ -182,18 +182,20 @@ if [ "$rc" -eq 0 ]; then agent-status set done; else agent-status set error; fi
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `@agent-status-icon-waiting` | `#[fg=red,bold]!#[default]` | Icon for `waiting`. |
+| `@agent-status-icon-waiting` | `#[fg=red,bold]?#[default]` | Icon for `waiting`. |
 | `@agent-status-icon-error` | `#[fg=red]x#[default]` | Icon for `error`. |
-| `@agent-status-icon-working` | `#[fg=yellow]*#[default]` | Icon for `working`. |
+| `@agent-status-icon-working` | `#[fg=yellow]>#[default]` | Icon for `working`. |
 | `@agent-status-icon-done` | `#[fg=green]+#[default]` | Icon for `done`. |
-| `@agent-status-icon-idle` | `#[fg=colour244]-#[default]` | Icon for `idle`. |
+| `@agent-status-icon-idle` | `#[fg=colour244].#[default]` | Icon for `idle`. |
 | `@agent-status-summary-states` | `waiting error working done` | States counted in `#{agent_summary}`, in order. |
 | `@agent-status-summary-separator` | ` ` (space) | Separator between summary entries. |
 | `@agent-status-auto-seen` | `on` | Turn `done` into `idle` once the pane is viewed in an attached session. |
 | `@agent-status-jump-key` | *(unset)* | Key (after prefix) bound to `jump`. It replaces any existing binding of that key, and is not unbound if the option is removed later. |
 | `@agent-status-jump-states` | `waiting error done` | States `jump` looks for, in order. |
 
-Icon changes apply on the next redraw.
+Icon changes apply on the next redraw. The defaults avoid tmux's window flag
+characters (`*`, `-`, `#`, `!`, `~`, `M`, `Z`) so they are not confused with
+`#{window_flags}`.
 
 ## CLI
 

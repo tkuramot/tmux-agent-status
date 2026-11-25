@@ -71,8 +71,7 @@ W1="$(t display-message -p -t test '#{window_id}')"
 P2="$(t split-window -d -P -F '#{pane_id}' -t "$P1")"
 
 t set-option -g @agent-status-icon-waiting A \; set-option -g @agent-status-icon-error E \; \
-	set-option -g @agent-status-icon-working R \; set-option -g @agent-status-icon-done D \; \
-	set-option -g @agent-status-icon-idle I
+	set-option -g @agent-status-icon-working R \; set-option -g @agent-status-icon-idle I
 t set-hook -g pane-exited 'set-option -g @user-hook ran'
 t set-option -g status-right '#{agent_summary}'
 t set-option -g window-status-format '#{agent_state}|#{agent_status}'
@@ -83,7 +82,7 @@ first_load="$(t show-option -gqv window-status-format)"
 
 assert_eq "placeholders are interpolated" "" "$(t show-option -gqv window-status-format | grep -F '#{agent_')"
 assert_eq "re-loading the plugin is idempotent" "$first_load" "$(t show-option -gqv window-status-format)"
-assert_eq "user icons are kept" A "$(t show-option -gqv @agent-status-icon-waiting)"
+assert_eq "defaults are not written to options" "" "$(t show-option -gqv @agent-status-icon-done)"
 assert_eq "user hooks are preserved" 'pane-exited[0] set-option -g @user-hook ran' \
 	"$(t show-hooks -g pane-exited | grep -F 'pane-exited[0]')"
 assert_eq "no agent renders empty" "|" "$(window_state "$W1")"
@@ -138,7 +137,9 @@ emit "$P2" Stop
 assert_eq "Stop in a detached session is done" "done" "$(pane_state "$P2")"
 emit "$P2" Notification:idle_prompt
 assert_eq "conditional action skips other states" "done" "$(pane_state "$P2")"
-assert_eq "summary follows" "R1 D1" "$(summary)"
+assert_eq "unset icons render the default" "R1 #[fg=green]+#[default]1" "$(summary)"
+t set-option -g @agent-status-icon-done D
+assert_eq "icon changes apply without a refresh" "R1 D1" "$(summary)"
 
 "$AS" seen --pane "$P2"
 assert_eq "seen ignores detached sessions" "done" "$(pane_state "$P2")"

@@ -11,16 +11,6 @@ CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_INDEX=7311
 SCRIPT="'$CURRENT_DIR/scripts/agent-status'"
 
-default_icon() {
-	case "$1" in
-	waiting) printf '%s' '#[fg=red,bold]!#[default]' ;;
-	error) printf '%s' '#[fg=red]x#[default]' ;;
-	working) printf '%s' '#[fg=yellow]*#[default]' ;;
-	done) printf '%s' '#[fg=green]+#[default]' ;;
-	idle) printf '%s' '#[fg=colour244]-#[default]' ;;
-	esac
-}
-
 # tmux_version_at_least MAJOR MINOR
 tmux_version_at_least() {
 	local version major minor
@@ -50,7 +40,7 @@ state_chain_format() {
 }
 
 render_name() { printf '%s' "$1"; }
-render_icon() { printf '#{@agent-status-icon-%s}' "$1"; }
+render_icon() { icon_format "$1"; }
 
 # Window state is derived from its panes at draw time, so it never goes stale.
 WINDOW_STATES="#{P:#{$OPT_STATE} }"
@@ -86,13 +76,6 @@ update_formats() {
 		value="$(tmux show-option -gqv "$option")"
 		new="$(interpolate "$value")"
 		[ "$new" = "$value" ] || tmux set-option -g "$option" "$new"
-	done
-}
-
-set_default_icons() {
-	local st
-	for st in $AGENT_STATUS_STATES; do
-		tmux set-option -goq "@agent-status-icon-$st" "$(default_icon "$st")"
 	done
 }
 
@@ -133,7 +116,6 @@ main() {
 		return 0
 		;;
 	esac
-	set_default_icons
 	update_formats
 	register_hooks
 	bind_keys

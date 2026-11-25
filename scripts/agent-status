@@ -126,8 +126,15 @@ refresh_summary() {
 			display-message -p "#{@agent-status-summary-states}${US}#{@agent-status-summary-separator}${US}#{$OPT_SUMMARY}")" || return 0
 		panes="${data%$'\n'*}"
 		config="${data##*$'\n'}"
-		summary="$(printf '%s\n%s\n' "$config" "$panes" | US="$US" STATES="$AGENT_STATUS_STATES" awk '
-			BEGIN { FS = ENVIRON["US"]; split(ENVIRON["STATES"], all, " "); for (i in all) valid[all[i]] = 1 }
+		summary="$(printf '%s\n%s\n' "$config" "$panes" | US="$US" STATES="$AGENT_STATUS_STATES" \
+			ICON_waiting="$(icon_format waiting)" ICON_error="$(icon_format error)" \
+			ICON_working="$(icon_format working)" ICON_done="$(icon_format "done")" \
+			ICON_idle="$(icon_format idle)" awk '
+			BEGIN {
+				FS = ENVIRON["US"]
+				split(ENVIRON["STATES"], all, " ")
+				for (i in all) icon[all[i]] = ENVIRON["ICON_" all[i]]
+			}
 			NR == 1 {
 				n = split($1 == "" ? "waiting error working done" : $1, order, " ")
 				sep = ($2 == "") ? " " : $2
@@ -138,8 +145,8 @@ refresh_summary() {
 			END {
 				out = ""
 				for (i = 1; i <= n; i++)
-					if (order[i] in valid && count[order[i]] > 0)
-						out = out (out == "" ? "" : sep) "#{@agent-status-icon-" order[i] "}" count[order[i]]
+					if (order[i] in icon && count[order[i]] > 0)
+						out = out (out == "" ? "" : sep) icon[order[i]] count[order[i]]
 				if (out == current) exit 1
 				print out
 			}')" || return 0
