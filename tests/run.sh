@@ -341,6 +341,28 @@ EOF
 	case "$(t display-message -p -t "$pa" '#{E:@pane-status_tree_format}')" in *"#[fg=default]#7 review ✗#[fg=themelightgrey]"*) r=ok ;; *) r=no ;; esac
 	assert_eq "tree format shows the pull request" ok "$r"
 
+	tree_order() { # first module whose fragment appears in the tree format
+		local f
+		f="$(t show-option -gqv @pane-status_tree_format)"
+		case "${f%%_state*}" in *agent) echo agent ;; *gh) echo gh ;; *) echo none ;; esac
+	}
+	t set-option -g @pane-status-choose-tree 'gh agent'
+	"$PLUGIN"
+	assert_eq "choose-tree lists modules in the given order" gh "$(tree_order)"
+	t set-option -g @pane-status-choose-tree agent
+	"$PLUGIN"
+	case "$(t show-option -gqv @pane-status_tree_format)" in *_gh_*) r=no ;; *) r=ok ;; esac
+	assert_eq "choose-tree leaves out unlisted modules" "agent:ok" "$(tree_order):$r"
+	t set-option -gu @pane-status-choose-tree
+	"$PLUGIN"
+	assert_eq "choose-tree defaults to the loaded modules" agent "$(tree_order)"
+
+	t set-option -g pane-border-format '#{gh_number}:#{gh_checks}'
+	"$PLUGIN"
+	assert_eq "number and checks placeholders" "7:failure" "$(gh_pane "$pa")"
+	t set-option -g pane-border-format '#{gh_status}|#{gh_state}'
+	"$PLUGIN"
+
 	before="$(calls)"
 	tick
 	sleep 0.5

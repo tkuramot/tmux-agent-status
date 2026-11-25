@@ -12,6 +12,10 @@ HOOK_INDEX=7311
 
 # Filled by modules/<name>/load.sh.
 interpolations=()
+loaded=()
+tree_panes=()
+tree_windows=()
+tree_sessions=()
 TREE_PANE=""
 TREE_WINDOW=""
 TREE_SESSION=""
@@ -104,10 +108,25 @@ tree_item() {
 	printf ' #[fg=default]%s#[fg=themelightgrey]' "$1"
 }
 
+# Fragments of the modules in @pane-status-choose-tree, in its order.
+select_tree() {
+	local name i
+	for name in $1; do
+		for ((i = 0; i < ${#loaded[@]}; i++)); do
+			[ "${loaded[i]}" = "$name" ] || continue
+			TREE_PANE="$TREE_PANE${tree_panes[i]}"
+			TREE_WINDOW="$TREE_WINDOW${tree_windows[i]}"
+			TREE_SESSION="$TREE_SESSION${tree_sessions[i]}"
+		done
+	done
+}
+
 # Only tmux's default s/w bindings (or ours) are replaced.
 bind_tree_keys() {
 	local enabled kw key note words
 	enabled="$(get_tmux_option @pane-status-choose-tree on)"
+	[ "$enabled" != on ] || enabled="${loaded[*]:-}"
+	select_tree "$enabled"
 	tmux set-option -g "$OPT_TREE_FORMAT" "$(tree_format)"
 	for kw in s:session w:window; do
 		key="${kw%%:*}"
@@ -139,8 +158,13 @@ main() {
 	clear_hooks
 	for module in $(get_tmux_option @pane-status-modules "$DEFAULT_MODULES"); do
 		if [ "${module//[!a-z]/}" = "$module" ] && [ -r "$CURRENT_DIR/modules/$module/load.sh" ]; then
+			tree_pane="" tree_window="" tree_session=""
 			# shellcheck source=/dev/null
 			. "$CURRENT_DIR/modules/$module/load.sh"
+			loaded+=("$module")
+			tree_panes+=("$tree_pane")
+			tree_windows+=("$tree_window")
+			tree_sessions+=("$tree_session")
 		else
 			tmux display-message "tmux-pane-status: unknown module: $module"
 		fi
