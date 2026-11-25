@@ -281,11 +281,12 @@ t set-option -gu @pane-status-agent-auto-seen
 # Fake gh: answers from $WORK/prs/<repo>.json through the plugin's own --jq
 # filter and logs each call.
 gh_tests() {
-	local bin="$WORK/ghbin" prs="$WORK/prs" repo pa pb pc pd before r
+	local bin="$WORK/ghbin" prs="$WORK/prs" repo pa pb pc pd pe before r start
 	mkdir -p "$bin" "$prs"
 	cat >"$bin/gh" <<EOF
 #!/bin/sh
-echo call >>"$WORK/gh.log"
+basename "\$PWD" >>"$WORK/gh.log"
+[ ! -r "$WORK/gh.sleep" ] || sleep "\$(cat "$WORK/gh.sleep")"
 while [ "\$#" -gt 0 ] && [ "\$1" != --jq ]; do shift; done
 f="$prs/\$(basename "\$PWD").json"
 [ -r "\$f" ] || { echo "no pull requests found" >&2; exit 1; }
@@ -315,6 +316,7 @@ EOF
 	pb="$(t split-window -d -P -F '#{pane_id}' -t "$pa" -c "$WORK/rb")"
 	pc="$(t split-window -d -P -F '#{pane_id}' -t "$pa" -c "$WORK/rc")"
 	pd="$(t split-window -d -P -F '#{pane_id}' -t "$pa" -c "$WORK")"
+	pe="$(t split-window -d -P -F '#{pane_id}' -t "$pa" -c "$WORK/ra")"
 	t set-option -g pane-border-format '#{gh_status}|#{gh_state}' \; set-option -g status-right 'right'
 	"$PLUGIN"
 	"$PLUGIN"
@@ -322,6 +324,8 @@ EOF
 
 	tick
 	eventually_eq "failing checks win over pending ones" "#7 review ✗|review" gh_pane "$pa"
+	eventually_eq "panes on the same branch share the result" "#7 review ✗|review" gh_pane "$pe"
+	assert_eq "one lookup per repository and branch" 1 "$(grep -c "^ra\$" "$WORK/gh.log")"
 	eventually_eq "merged hides checks" "#8 merged|merged" gh_pane "$pb"
 	assert_eq "detached HEAD shows nothing" "|" "$(gh_pane "$pc")"
 	assert_eq "a directory outside a repository shows nothing" "|" "$(gh_pane "$pd")"
@@ -343,11 +347,26 @@ EOF
 	eventually_eq "a draft without checks shows no icon" "#9 draft|draft" gh_pane "$pc"
 	eventually_eq "a pane whose pull request is gone is cleared" "|" gh_pane "$pb"
 
+	echo 3 >"$WORK/gh.sleep"
+	start=$(date +%s)
+	tick | cat
+	assert_eq "tick does not wait for lookups" 1 "$(($(date +%s) - start < 2))"
+	rm "$WORK/gh.sleep"
+
+	t set-option -g remain-on-exit on
+	pd="$(t new-window -d -P -F '#{pane_id}' -t test -c "$WORK/rb" true)"
+	eventually_eq "pane is dead" 1 t display-message -p -t "$pd" '#{pane_dead}'
+	(cd "$WORK/ra" && tick)
+	sleep 0.5
+	assert_eq "a dead pane is not resolved from the job's directory" "|" "$(gh_pane "$pd")"
+	t kill-pane -t "$pd" \; set-option -gu remain-on-exit
+
 	t set-option -g @pane-status-modules agent
 	rm -f "$WORK/gh.log"
 	tick
 	sleep 0.5
-	assert_eq "tick does nothing when the module is disabled" 0 "$(calls)"
+	assert_eq "a disabled module makes no lookups" 0 "$(calls)"
+	assert_eq "a disabled module clears its state" "|" "$(gh_pane "$pa")"
 	t set-option -gu @pane-status-gh-ttl \; set-option -gu @pane-status-modules
 	t kill-window -t "$GW"
 }

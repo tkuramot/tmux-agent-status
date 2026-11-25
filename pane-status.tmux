@@ -83,6 +83,17 @@ window_format,\
 #{?session_attached, (attached),}$TREE_SESSION}"
 }
 
+# chain LIST STATES RENDER: `RENDER <state>` for the first of STATES that
+# the space-separated list LIST expands to contains.
+chain() {
+	local st out="" close=""
+	for st in $2; do
+		out="$out#{?#{m:*$st*,$1},$("$3" "$st"),"
+		close="$close}"
+	done
+	printf '%s%s' "$out" "$close"
+}
+
 # Display of value $2 of module $1: @pane-status-$1-icon-$2, else <module>_default.
 icon() {
 	option_format "@pane-status-$1-icon-$2" "$("$1_default" "$2")"
@@ -119,13 +130,13 @@ main() {
 	fi
 	# The path is embedded in tmux command strings and sh single quotes.
 	case "$CURRENT_DIR" in
-	*[\'\"\$\\\`#]*)
+	*[\'\"\$\\\`#\(\)]*)
 		tmux display-message "tmux-pane-status: unsupported characters in install path"
 		return 0
 		;;
 	esac
 	clear_hooks
-	for module in $(get_tmux_option @pane-status-modules 'agent gh'); do
+	for module in $(get_tmux_option @pane-status-modules "$DEFAULT_MODULES"); do
 		if [ "${module//[!a-z]/}" = "$module" ] && [ -r "$CURRENT_DIR/modules/$module/load.sh" ]; then
 			# shellcheck source=/dev/null
 			. "$CURRENT_DIR/modules/$module/load.sh"

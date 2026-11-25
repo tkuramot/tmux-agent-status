@@ -24,11 +24,14 @@ Both are enabled by default. Choose with `@pane-status-modules`:
 set -g @pane-status-modules 'agent'
 ```
 
+A disabled `gh` module clears its state on the next tick. To disable `agent`,
+also remove its hooks from your agent, or it keeps reporting state.
+
 ## Requirements
 
 - tmux 3.8 or later
 - bash 3.2 or later (the macOS system bash works)
-- `gh`, authenticated, for the `gh` module
+- `git` and `gh` (authenticated) for the `gh` module
 
 ## Installation
 
@@ -247,10 +250,11 @@ ln -s ~/.tmux/plugins/tmux-pane-status/modules/agent/agent-status ~/.local/bin/a
 
 `choose-tree` lists every pane, so one job refreshes them all: the plugin
 appends `#(…/gh-status tick)`, which prints nothing, to the global
-`status-right`. Each tick resolves every pane's repository and branch, reads
-the cache, and looks up stale entries with `gh pr view` in the background.
-One lookup per repository and branch is made per `@pane-status-gh-ttl`,
-however many panes share it.
+`status-right`. tmux runs it every `status-interval` for each attached
+client. Each tick resolves every pane's repository and branch, reads the
+cache, and looks up stale entries with `gh pr view` in the background. A
+lock and the cache keep it to about one lookup per repository and branch per
+`@pane-status-gh-ttl`, however many panes and clients share it.
 
 Merged and closed pull requests are still found for their branch, so a pane
 shows `merged` until you switch branches.
@@ -277,7 +281,7 @@ bind g display-popup -E -w 90% -h 90% -d '#{pane_current_path}' gh-dash
   theme that later overwrites `status-right` drops the refresh job.
 - gh: a failed lookup (offline, not authenticated) shows nothing until the
   next lookup.
-- The install path must not contain `'`, `"`, `$`, `\`, `` ` `` or `#`.
+- The install path must not contain `'`, `"`, `$`, `\`, `` ` ``, `#`, `(` or `)`.
 
 ## Development
 

@@ -27,9 +27,16 @@ JQ='
 # Prints the repository root and branch checked out in $1, one per line.
 repo_branch() {
 	local out ref
+	[ -n "$1" ] || return 1
 	out="$(git -C "$1" rev-parse --show-toplevel --symbolic-full-name HEAD 2>/dev/null)" || return 1
 	ref="${out#*$'\n'}"
 	case "$ref" in refs/heads/*) printf '%s\n%s' "${out%%$'\n'*}" "${ref#refs/heads/}" ;; *) return 1 ;; esac
+}
+
+is_fresh() {
+	local stamp=0
+	[ ! -r "$1" ] || read -r stamp _ <"$1"
+	[ $(($(date +%s) - stamp)) -lt "$TTL" ]
 }
 
 # refresh CACHE_FILE REPO_ROOT
@@ -37,48 +44,53 @@ refresh() {
 	local lock="$1.lock" out
 	find "$lock" -maxdepth 0 -mmin +2 -exec rmdir {} \; 2>/dev/null
 	mkdir "$lock" 2>/dev/null || return 0
-	out="$(cd "$2" && gh pr view --json number,state,isDraft,reviewDecision,statusCheckRollup --jq "$JQ" 2>/dev/null)"
-	printf '%s %s\n' "$(date +%s)" "$out" >"$1.tmp" && mv "$1.tmp" "$1"
+	if ! is_fresh "$1"; then
+		out="$(cd "$2" && gh pr view --json number,state,isDraft,reviewDecision,statusCheckRollup --jq "$JQ" 2>/dev/null)"
+		printf '%s %s\n' "$(date +%s)" "$out" >"$1.tmp" && mv "$1.tmp" "$1"
+	fi
 	rmdir "$lock"
-	"$CURRENT_DIR/gh-status" tick --cached
+	cmd_tick --cached
 }
 
-# Refreshes stale cache entries in the background unless --cached is given.
-cmd_tick() {
-	local cached="${1:-}" ttl now seen=" " pane path number state checks lines root file stamp n s k
+# set_pane PANE NUMBER STATE CHECKS; empty values unset the option.
+set_pane() {
 	local -a args=()
-	case " $(get_tmux_option @pane-status-modules 'agent gh') " in *" gh "*) ;; *) return 0 ;; esac
-	command -v gh >/dev/null 2>&1 || return 0
-	ttl="$(get_tmux_option @pane-status-gh-ttl 60)"
-	now="$(date +%s)"
-	mkdir -p "$CACHE_DIR" || return 0
+	local opt value
+	for opt in "$OPT_GH_NUMBER:$2" "$OPT_GH_STATE:$3" "$OPT_GH_CHECKS:$4"; do
+		value="${opt#*:}"
+		if [ -n "$value" ]; then
+			args+=(set-option -p -t "$1" "${opt%%:*}" "$value" \;)
+		else
+			args+=(set-option -pu -t "$1" "${opt%%:*}" \;)
+		fi
+	done
+	tmux "${args[@]}" 2>/dev/null
+}
+
+# Copies cached states into pane options; without --cached, also refreshes
+# stale entries in the background. Disabled or without gh, it clears them.
+cmd_tick() {
+	local cached="" active=1 seen=" " pane path number state checks lines file n s k
+	[ "${1:-}" != --cached ] || cached=1
+	case " $(get_tmux_option @pane-status-modules "$DEFAULT_MODULES") " in *" gh "*) ;; *) active="" ;; esac
+	command -v gh >/dev/null 2>&1 || active=""
+	TTL="$(get_tmux_option @pane-status-gh-ttl 60)"
+	case "$TTL" in *[!0-9]*) TTL=60 ;; esac
+	[ -z "$active" ] || mkdir -p "$CACHE_DIR" || return 0
 	while IFS="$US" read -r pane path number state checks; do
 		case "$seen" in *" $pane "*) continue ;; esac
 		seen="$seen$pane "
 		n="" s="" k=""
-		if lines="$(repo_branch "$path")"; then
-			root="${lines%%$'\n'*}"
+		if [ -n "$active" ] && lines="$(repo_branch "$path")"; then
 			file="$CACHE_DIR/$(printf '%s' "$lines" | cksum | tr ' ' -)"
-			stamp=0
-			[ ! -r "$file" ] || read -r stamp n s k <"$file"
+			[ ! -r "$file" ] || read -r _ n s k <"$file"
 			[ "$k" != - ] || k=""
-			[ -n "$cached" ] || [ $((now - stamp)) -lt "$ttl" ] ||
-				refresh "$file" "$root" </dev/null >/dev/null 2>&1 &
-		fi
-		[ "$n:$s:$k" != "$number:$state:$checks" ] || continue
-		if [ -n "$s" ]; then
-			args+=(set-option -p -t "$pane" "$OPT_GH_NUMBER" "$n" \; set-option -p -t "$pane" "$OPT_GH_STATE" "$s" \;)
-			if [ -n "$k" ]; then
-				args+=(set-option -p -t "$pane" "$OPT_GH_CHECKS" "$k" \;)
-			else
-				args+=(set-option -pu -t "$pane" "$OPT_GH_CHECKS" \;)
+			if [ -z "$cached" ] && ! is_fresh "$file"; then
+				refresh "$file" "${lines%%$'\n'*}" </dev/null >/dev/null 2>&1 &
 			fi
-		else
-			args+=(set-option -pu -t "$pane" "$OPT_GH_NUMBER" \; set-option -pu -t "$pane" "$OPT_GH_STATE" \;
-				set-option -pu -t "$pane" "$OPT_GH_CHECKS" \;)
 		fi
+		[ "$n:$s:$k" = "$number:$state:$checks" ] || set_pane "$pane" "$n" "$s" "$k"
 	done < <(tmux list-panes -a -F "#{pane_id}$US#{pane_current_path}$US#{$OPT_GH_NUMBER}$US#{$OPT_GH_STATE}$US#{$OPT_GH_CHECKS}")
-	[ "${#args[@]}" -eq 0 ] || tmux "${args[@]}"
 }
 
 case "${1:-}" in

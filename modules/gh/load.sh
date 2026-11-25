@@ -13,18 +13,8 @@ gh_default() {
 }
 gh_icon() { icon gh "$1"; }
 
-# gh_chain OPTION STATES RENDER
-gh_chain() {
-	local st out="" close=""
-	for st in $2; do
-		out="$out#{?#{==:#{$1},$st},$("$3" "$st"),"
-		close="$close}"
-	done
-	printf '%s%s' "$out" "$close"
-}
-
-GH_FORMAT="###{$OPT_GH_NUMBER} $(gh_chain "$OPT_GH_STATE" "$GH_STATES" gh_icon)\
-#{?#{$OPT_GH_CHECKS}, $(gh_chain "$OPT_GH_CHECKS" "$GH_CHECKS" gh_icon),}"
+GH_FORMAT="###{$OPT_GH_NUMBER} $(chain "#{$OPT_GH_STATE}" "$GH_STATES" gh_icon)\
+#{?#{$OPT_GH_CHECKS}, $(chain "#{$OPT_GH_CHECKS}" "$GH_CHECKS" gh_icon),}"
 
 interpolations+=(
 	"#{gh_status}" "#{?#{$OPT_GH_STATE},$GH_FORMAT,}"

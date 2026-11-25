@@ -1,6 +1,8 @@
 # shellcheck shell=bash disable=SC2034
 # Shared by pane-status.tmux and the module scripts. Keep bash 3.2 compatible.
 
+DEFAULT_MODULES="agent gh"
+
 # Plugin-written options use `_`; user settings use `-`.
 OPT_TREE_FORMAT="@pane-status_tree_format"
 
