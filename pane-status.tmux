@@ -39,7 +39,7 @@ set_hook() {
 
 clear_hooks() {
 	local hook
-	for hook in $(tmux show-hooks -g | awk -v i="[$HOOK_INDEX]" 'index($1, i) { print $1 }'); do
+	for hook in $({ tmux show-hooks -g; tmux show-hooks -gw; } | awk -v i="[$HOOK_INDEX]" 'index($1, i) { print $1 }'); do
 		tmux set-hook -gu "$hook"
 	done
 }

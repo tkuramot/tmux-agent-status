@@ -84,6 +84,14 @@ assert_eq "re-loading the plugin succeeds" 0 "$?"
 assert_eq "placeholders are interpolated" "" "$(t show-option -gqv window-status-format | grep -F '#{agent_')"
 assert_eq "re-loading the plugin is idempotent" "$first_load" "$(t show-option -gqv window-status-format)"
 assert_eq "defaults are not written to options" "" "$(t show-option -gqv @pane-status-agent-icon-done)"
+t set-hook -g 'pane-exited[7311]' 'set-option -g @stale-hook ran'
+"$PLUGIN"
+assert_eq "stale hooks of ours are removed, window hooks included" "" "$(t show-hooks -gw pane-exited | grep -F '[7311]')"
+t set-option -g @pane-status-modules gh
+"$PLUGIN"
+assert_eq "a disabled module's hooks are removed" "" "$({ t show-hooks -g; t show-hooks -gw; } | grep -F '[7311]')"
+t set-option -gu @pane-status-modules
+"$PLUGIN"
 assert_eq "user hooks are preserved" 'pane-exited[0] set-option -g @user-hook ran' \
 	"$(t show-hooks -g pane-exited | grep -F 'pane-exited[0]')"
 assert_eq "no agent renders empty" "|" "$(window_state "$W1")"
