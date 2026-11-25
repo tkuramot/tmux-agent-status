@@ -131,13 +131,17 @@ assert_eq "matcher events map through the adapter" waiting "$(pane_state "$P2")"
 assert_eq "window shows the highest-priority state" "waiting|A" "$(window_state "$W1")"
 assert_eq "summary lists states in priority order" "A1 R1" "$(summary)"
 
-emit "$P2" Notification:idle_prompt
+cond_map="$XDG_CONFIG_HOME/tmux-agent-status/adapters/cond/map"
+mkdir -p "$(dirname "$cond_map")"
+printf 'Calm idle working,waiting\n' >"$cond_map"
+TMUX_PANE="$P2" "$AS" emit cond Calm </dev/null
 assert_eq "conditional action applies from a listed state" idle "$(pane_state "$P2")"
 emit "$P2" Stop
 assert_eq "Stop in a detached session is done" "done" "$(pane_state "$P2")"
-emit "$P2" Notification:idle_prompt
+TMUX_PANE="$P2" "$AS" emit cond Calm </dev/null
 assert_eq "conditional action skips other states" "done" "$(pane_state "$P2")"
-assert_eq "unset icons render the default" "R1 #[fg=green]+#[default]1" "$(summary)"
+rm -rf "$XDG_CONFIG_HOME/tmux-agent-status"
+assert_eq "unset icons render the default" "R1 +1" "$(summary)"
 t set-option -g @agent-status-icon-done D
 assert_eq "icon changes apply without a refresh" "R1 D1" "$(summary)"
 

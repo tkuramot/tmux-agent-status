@@ -7,7 +7,7 @@ The agent reports state changes through its own hooks, so nothing is polled:
 the status line reads tmux options that change only when something happens.
 
 ```
-0 zsh  1 api ?  2 web >  3 docs +                  ?1 >1 +1
+0 zsh  1 api ?  2 web >  3 docs +  4 sh o            ?1 >1 +1
 ```
 
 ## How it works
@@ -123,16 +123,16 @@ Event mapping (`adapters/claude-code/map`):
 | `SessionStart` (`startup`, `resume`, `clear`) | `idle` |
 | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | `working` |
 | `Notification` (`permission_prompt`, `elicitation_dialog`) | `waiting` |
-| `Notification` (`idle_prompt`) | `idle`, only from `working` or `waiting` |
 | `Stop` | `done` |
 | `StopFailure` | `error` |
 | `SessionEnd` (except `clear`) | cleared |
 
 - `SessionStart` with `compact` is not hooked because it can fire mid-turn.
-- Interrupting Claude (Esc) or rejecting a permission prompt fires no hook, so
-  the pane stays `working`/`waiting` until `idle_prompt` arrives (after the
-  prompt has been idle for a while) or the next prompt.
-- `idle_prompt` does not touch `done`, so an unseen result stays visible.
+- Interrupting Claude with Esc fires no hook (not even `idle_prompt` later),
+  so the pane stays `working` until the next prompt. Detecting it would need
+  polling, which this plugin avoids.
+- Subagents report through the same pane: while a background subagent runs
+  after the main turn has ended, the pane shows `working`.
 
 ### Adding another agent
 
@@ -182,20 +182,37 @@ if [ "$rc" -eq 0 ]; then agent-status set done; else agent-status set error; fi
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `@agent-status-icon-waiting` | `#[fg=red,bold]?#[default]` | Icon for `waiting`. |
-| `@agent-status-icon-error` | `#[fg=red]x#[default]` | Icon for `error`. |
-| `@agent-status-icon-working` | `#[fg=yellow]>#[default]` | Icon for `working`. |
-| `@agent-status-icon-done` | `#[fg=green]+#[default]` | Icon for `done`. |
-| `@agent-status-icon-idle` | `#[fg=colour244].#[default]` | Icon for `idle`. |
+| `@agent-status-icon-waiting` | `#[reverse]?#[noreverse]` | Icon for `waiting`. |
+| `@agent-status-icon-error` | `#[push-default]#[fg=white,bg=red]x#[default]#[pop-default]` | Icon for `error`. |
+| `@agent-status-icon-working` | `>` | Icon for `working`. |
+| `@agent-status-icon-done` | `+` | Icon for `done`. |
+| `@agent-status-icon-idle` | `#[dim]o#[nodim]` | Icon for `idle`. |
 | `@agent-status-summary-states` | `waiting error working done` | States counted in `#{agent_summary}`, in order. |
 | `@agent-status-summary-separator` | ` ` (space) | Separator between summary entries. |
 | `@agent-status-auto-seen` | `on` | Turn `done` into `idle` once the pane is viewed in an attached session. |
 | `@agent-status-jump-key` | *(unset)* | Key (after prefix) bound to `jump`. It replaces any existing binding of that key, and is not unbound if the option is removed later. |
 | `@agent-status-jump-states` | `waiting error done` | States `jump` looks for, in order. |
 
-Icon changes apply on the next redraw. The defaults avoid tmux's window flag
-characters (`*`, `-`, `#`, `!`, `~`, `M`, `Z`) so they are not confused with
-`#{window_flags}`.
+Icon changes apply on the next redraw. An empty value means the default; to
+hide a state, set its icon to `#[]`.
+
+About the defaults:
+
+- Glyphs differ from tmux's window flags (`*`, `-`, `#`, `!`, `~`, `M`, `Z`),
+  and avoid `_` and `.`, which the current window's underline hides.
+- `waiting` swaps the status line's own colours, so it stands out on any
+  theme. `error` is white on red.
+- `working`, `done` and `idle` use the status line's colours. `idle` is dimmed,
+  so its contrast is lower (and some terminals ignore dim); it is the least
+  important state.
+- States differ by glyph, so colour is never needed to tell them apart.
+- Each icon undoes only the style it sets, so styles you apply around
+  `#{agent_status}` carry on after it. For your own icons, end with the
+  matching `no...` attribute or wrap colours in `#[push-default]` ...
+  `#[default]#[pop-default]`, rather than `#[default]`, which resets to the
+  status line style.
+- Avoid `bold` with a black foreground: many terminals draw bold black as
+  grey.
 
 ## CLI
 
