@@ -1,0 +1,417 @@
+#!/usr/bin/env bash
+# agent-status: agent-agnostic state store for tmux-agent-status.
+
+set -u
+set -f
+shopt -u patsub_replacement 2>/dev/null
+
+# Follow symlinks (e.g. ~/.local/bin/agent-status); `readlink -f` is not portable.
+source="${BASH_SOURCE[0]}"
+while [ -L "$source" ]; do
+	dir="$(cd -P "$(dirname "$source")" && pwd)"
+	source="$(readlink "$source")"
+	case "$source" in /*) ;; *) source="$dir/$source" ;; esac
+done
+CURRENT_DIR="$(cd -P "$(dirname "$source")" && pwd)"
+unset source dir
+# shellcheck source=scripts/helpers.sh
+. "$CURRENT_DIR/helpers.sh"
+
+ADAPTERS_DIR="${CURRENT_DIR%/*}/adapters"
+
+# Non-whitespace, so `read` keeps empty fields.
+US=$'\037'
+
+VISIBLE_FORMAT='#{&&:#{pane_active},#{&&:#{window_active},#{session_attached}}}'
+
+usage() {
+	cat <<'EOF'
+Usage: agent-status <command> [arguments]
+
+  emit <agent> <event>             Apply the adapter's action for an event.
+                                   For agent hooks: discards stdin, prints
+                                   nothing, always exits 0.
+  set <state> [--pane P] [--agent A]
+  clear [--pane P]
+  seen [--pane P]                  Turn "done" into "idle".
+  refresh                          Recompute the summary.
+  jump [--client C] [state...]     Switch to the next pane in a state.
+  list                             Print panes that have a state.
+  check <agent>                    Validate the agent's adapter map.
+  hooks <agent>                    Print hook settings generated from the map.
+
+States: waiting error working done idle. --pane defaults to $TMUX_PANE.
+EOF
+}
+
+die() {
+	printf 'agent-status: %s\n' "$*" >&2
+	exit 1
+}
+
+is_state() {
+	case " $AGENT_STATUS_STATES " in
+	*" $1 "*) [ -n "$1" ] ;;
+	*) return 1 ;;
+	esac
+}
+
+# Agent names become path components.
+is_valid_agent_name() {
+	case "$1" in
+	'' | *[!A-Za-z0-9_-]*) return 1 ;;
+	*) return 0 ;;
+	esac
+}
+
+# An explicit empty target is an error rather than $TMUX_PANE.
+resolve_pane() {
+	local target id
+	if [ "$#" -gt 0 ]; then target="$1"; else target="${TMUX_PANE:-}"; fi
+	[ -n "$target" ] || return 1
+	id="$(tmux display-message -p -t "$target" '#{pane_id}' 2>/dev/null)"
+	case "$id" in %*) printf '%s' "$id" ;; *) return 1 ;; esac
+}
+
+pane_arg() {
+	if [ "$PANE_GIVEN" = 1 ]; then resolve_pane "$PANE_ARG"; else resolve_pane; fi
+}
+
+# --- state ----------------------------------------------------------------
+
+# Run tmux commands on a pane and refresh the summary if its state changed.
+# The before/after reads share one command list with the change.
+change_pane() {
+	local pane="$1" out
+	shift
+	# Brackets keep an empty state from being lost to newline trimming.
+	out="$(tmux display-message -p -t "$pane" "[#{$OPT_STATE}]" \; "$@" \; \
+		display-message -p -t "$pane" "[#{$OPT_STATE}]")" || return 1
+	[ "${out%%$'\n'*}" = "${out#*$'\n'}" ] || refresh_summary
+}
+
+# apply_state PANE STATE AGENT [FROM_STATES]
+# The condition is evaluated by tmux, so nothing can interleave between the
+# check and the write.
+apply_state() {
+	local pane="$1" state="$2" agent="$3" from="${4:-}" cond="1" value st cmd
+	if [ -n "$from" ]; then
+		cond=""
+		for st in ${from//,/ }; do
+			if [ -z "$cond" ]; then
+				cond="#{==:#{$OPT_STATE},$st}"
+			else
+				cond="#{||:#{==:#{$OPT_STATE},$st},$cond}"
+			fi
+		done
+	fi
+	value="$state"
+	[ "$state" != done ] ||
+		value="#{?#{==:#{@agent-status-auto-seen},off},done,#{?$VISIBLE_FORMAT,idle,done}}"
+	cmd="set-option -pF -t $pane $OPT_STATE \"$value\""
+	[ -z "$agent" ] || cmd="$cmd ; set-option -p -t $pane $OPT_AGENT $agent"
+	change_pane "$pane" if-shell -F -t "$pane" "$cond" "$cmd"
+}
+
+clear_state() {
+	change_pane "$1" set-option -pu -t "$1" "$OPT_STATE" \; set-option -pu -t "$1" "$OPT_AGENT"
+}
+
+# Optimistic: if pane states changed while we computed, recompute, so the
+# last writer always reflects current state.
+refresh_summary() {
+	local data panes config summary
+	for _ in 1 2 3 4 5; do
+		data="$(tmux list-panes -a -F "#{pane_id}${US}#{$OPT_STATE}" \; \
+			display-message -p "#{@agent-status-summary-states}${US}#{@agent-status-summary-separator}${US}#{$OPT_SUMMARY}")" || return 0
+		panes="${data%$'\n'*}"
+		config="${data##*$'\n'}"
+		summary="$(printf '%s\n%s\n' "$config" "$panes" | US="$US" STATES="$AGENT_STATUS_STATES" awk '
+			BEGIN { FS = ENVIRON["US"]; split(ENVIRON["STATES"], all, " "); for (i in all) valid[all[i]] = 1 }
+			NR == 1 {
+				n = split($1 == "" ? "waiting error working done" : $1, order, " ")
+				sep = ($2 == "") ? " " : $2
+				current = $3
+				next
+			}
+			!seen[$1]++ { count[$2]++ }
+			END {
+				out = ""
+				for (i = 1; i <= n; i++)
+					if (order[i] in valid && count[order[i]] > 0)
+						out = out (out == "" ? "" : sep) "#{@agent-status-icon-" order[i] "}" count[order[i]]
+				if (out == current) exit 1
+				print out
+			}')" || return 0
+		if [ -n "$summary" ]; then
+			tmux set-option -g "$OPT_SUMMARY" "$summary"
+		else
+			tmux set-option -gu "$OPT_SUMMARY"
+		fi
+		[ "$(tmux list-panes -a -F "#{pane_id}${US}#{$OPT_STATE}")" != "$panes" ] || return 0
+	done
+}
+
+# --- adapters -------------------------------------------------------------
+
+find_map() {
+	local dir config="${XDG_CONFIG_HOME:-${HOME:+$HOME/.config}}"
+	for dir in ${config:+"$config/tmux-agent-status/adapters"} "$ADAPTERS_DIR"; do
+		[ -r "$dir/$1/map" ] && printf '%s' "$dir/$1/map" && return 0
+	done
+	return 1
+}
+
+# Print "<action> <from-states>" for an event.
+lookup_event() {
+	local key action from
+	while read -r key action from _; do
+		[ "$key" = "$2" ] || continue
+		printf '%s %s' "$action" "$from"
+		return 0
+	done <"$1"
+	return 1
+}
+
+validate_map() {
+	local file="$1" lineno=0 errors=0 line key action from extra event seen=" " st
+	while IFS= read -r line || [ -n "$line" ]; do
+		lineno=$((lineno + 1))
+		read -r key action from extra <<EOF
+$line
+EOF
+		case "$key" in '' | '#'*) continue ;; esac
+		set --
+		[ -z "$extra" ] || set -- "$@" "too many fields"
+		[ -n "$action" ] || set -- "$@" "missing action"
+		case "$key" in
+		*:*:* | :* | *: | *[!A-Za-z0-9_.:\|*-]*) set -- "$@" "invalid event: $key" ;;
+		esac
+		if [ "$action" = clear ]; then
+			[ -z "$from" ] || set -- "$@" "clear takes no from-states"
+		elif [ -n "$action" ] && ! is_state "$action"; then
+			set -- "$@" "unknown action: $action"
+		fi
+		for st in ${from//,/ }; do
+			is_state "$st" || set -- "$@" "unknown from-state: $st"
+		done
+		event="${key%%:*}"
+		case "$seen" in *" $key "*) set -- "$@" "duplicate event: $key" ;; esac
+		case "$key" in
+		*:*) case "$seen" in *" $event "*) set -- "$@" "$key overlaps $event; both hooks would fire" ;; esac ;;
+		*) case "$seen" in *" $event:"*) set -- "$@" "$key overlaps $event:*; both hooks would fire" ;; esac ;;
+		esac
+		seen="$seen$key "
+		for st in "$@"; do
+			printf '%s:%d: %s\n' "$file" "$lineno" "$st" >&2
+			errors=$((errors + 1))
+		done
+	done <"$file"
+	[ "$errors" -eq 0 ]
+}
+
+json_string() {
+	local s="${1//\\/\\\\}"
+	printf '"%s"' "${s//\"/\\\"}"
+}
+
+# Claude Code settings shape: one hook group per entry; `Event:detail` becomes
+# a matcher on Event.
+print_hooks() {
+	local agent="$1" map="$2" path="$CURRENT_DIR/agent-status" key events="" event first_event=1 first_group
+	case "$path" in *\'*) die "install path contains a single quote: $path" ;; esac
+	while read -r key _; do
+		case "$key" in '' | '#'*) continue ;; esac
+		case " $events " in *" ${key%%:*} "*) ;; *) events="$events ${key%%:*}" ;; esac
+	done <"$map"
+
+	printf '{\n  "hooks": {'
+	for event in $events; do
+		[ "$first_event" = 1 ] || printf ','
+		first_event=0
+		printf '\n    %s: [' "$(json_string "$event")"
+		first_group=1
+		while read -r key _; do
+			case "$key" in '' | '#'*) continue ;; esac
+			[ "${key%%:*}" = "$event" ] || continue
+			[ "$first_group" = 1 ] || printf ','
+			first_group=0
+			printf '\n      { '
+			case "$key" in *:*) printf '"matcher": %s, ' "$(json_string "${key#*:}")" ;; esac
+			printf '"hooks": [{ "type": "command", "timeout": 10, "command": %s }] }' \
+				"$(json_string "'$path' emit $agent '$key'")"
+		done <"$map"
+		printf '\n    ]'
+	done
+	printf '\n  }\n}\n'
+}
+
+# --- commands -------------------------------------------------------------
+
+parse_args() {
+	PANE_ARG="" PANE_GIVEN=0 AGENT_ARG="" CLIENT_ARG=""
+	POSITIONAL=()
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		--pane | --agent | --client)
+			[ "$#" -ge 2 ] || die "$1 requires a value"
+			case "$1" in
+			--pane) PANE_ARG="$2" PANE_GIVEN=1 ;;
+			--agent) AGENT_ARG="$2" ;;
+			--client) CLIENT_ARG="$2" ;;
+			esac
+			shift 2
+			;;
+		--) shift; POSITIONAL+=("$@"); break ;;
+		-*) die "unknown option: $1" ;;
+		*) POSITIONAL+=("$1"); shift ;;
+		esac
+	done
+}
+
+cmd_emit() {
+	# Deadline-bound, so a writer that keeps stdin open cannot hang the agent.
+	if [ ! -t 0 ]; then
+		local end=$((SECONDS + 2))
+		while [ "$SECONDS" -lt "$end" ] && IFS= read -r -t 1 _; do :; done
+	fi
+	emit_event "$@" >/dev/null 2>&1
+	exit 0
+}
+
+emit_event() {
+	local agent="${1:-}" event="${2:-}" map action from
+	[ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && [ -n "$event" ] || return 0
+	command -v tmux >/dev/null 2>&1 || return 0
+	is_valid_agent_name "$agent" || return 0
+	map="$(find_map "$agent")" || return 0
+	read -r action from <<EOF
+$(lookup_event "$map" "$event")
+EOF
+	case "$action" in
+	clear) clear_state "$TMUX_PANE" ;;
+	*) ! is_state "$action" || apply_state "$TMUX_PANE" "$action" "$agent" "$from" ;;
+	esac
+	return 0
+}
+
+cmd_set() {
+	local pane
+	parse_args "$@"
+	[ "${#POSITIONAL[@]}" -eq 1 ] || die "usage: agent-status set <state> [--pane P] [--agent A]"
+	is_state "${POSITIONAL[0]}" || die "unknown state: ${POSITIONAL[0]} (expected: $AGENT_STATUS_STATES)"
+	[ -z "$AGENT_ARG" ] || is_valid_agent_name "$AGENT_ARG" || die "invalid agent name: $AGENT_ARG"
+	pane="$(pane_arg)" || die "no such pane: ${PANE_ARG:-\$TMUX_PANE}"
+	apply_state "$pane" "${POSITIONAL[0]}" "$AGENT_ARG"
+}
+
+cmd_clear() {
+	local pane
+	parse_args "$@"
+	[ "${#POSITIONAL[@]}" -eq 0 ] || die "usage: agent-status clear [--pane P]"
+	pane="$(pane_arg)" || die "no such pane: ${PANE_ARG:-\$TMUX_PANE}"
+	clear_state "$pane"
+}
+
+cmd_seen() {
+	local pane
+	parse_args "$@"
+	[ "${#POSITIONAL[@]}" -eq 0 ] || die "usage: agent-status seen [--pane P]"
+	pane="$(pane_arg)" || return 0
+	change_pane "$pane" if-shell -F -t "$pane" \
+		"#{&&:#{==:#{$OPT_STATE},done},#{session_attached}}" "set-option -p -t $pane $OPT_STATE idle"
+}
+
+cmd_jump() {
+	local states current="" st pane_id pane_state target="" found_current panes
+	local -a client_flag=() candidates
+
+	parse_args "$@"
+	[ -z "$CLIENT_ARG" ] || client_flag=(-c "$CLIENT_ARG")
+	if [ "${#POSITIONAL[@]}" -gt 0 ]; then
+		states="${POSITIONAL[*]}"
+	else
+		states="$(get_tmux_option @agent-status-jump-states 'waiting error done')"
+	fi
+	for st in $states; do
+		is_state "$st" || die "unknown state: $st"
+	done
+
+	if [ -n "$CLIENT_ARG" ]; then
+		current="$(tmux display-message -p -c "$CLIENT_ARG" '#{pane_id}' 2>/dev/null)"
+	else
+		current="${TMUX_PANE:-}"
+	fi
+	panes="$(tmux list-panes -a -F "#{pane_id}${US}#{$OPT_STATE}")"
+
+	for st in $states; do
+		candidates=()
+		while IFS="$US" read -r pane_id pane_state; do
+			[ "$pane_state" = "$st" ] || continue
+			case " ${candidates[*]:-} " in *" $pane_id "*) continue ;; esac
+			candidates+=("$pane_id")
+		done <<EOF
+$panes
+EOF
+		[ "${#candidates[@]}" -gt 0 ] || continue
+		# Cycle: the candidate after the current pane, wrapping around.
+		found_current=0
+		for pane_id in "${candidates[@]}"; do
+			if [ "$found_current" = 1 ]; then
+				target="$pane_id"
+				break
+			fi
+			[ "$pane_id" != "$current" ] || found_current=1
+		done
+		target="${target:-${candidates[0]}}"
+		break
+	done
+
+	if [ -z "$target" ]; then
+		tmux display-message ${client_flag[@]+"${client_flag[@]}"} "agent-status: no pane is ${states// / or }"
+		return 0
+	fi
+	tmux switch-client ${client_flag[@]+"${client_flag[@]}"} -t "$target"
+}
+
+cmd_list() {
+	tmux list-panes -a -F "#{pane_id}	#{session_name}:#{window_index}.#{pane_index}	#{$OPT_AGENT}	#{$OPT_STATE}" |
+		awk -F '\t' '$4 != "" && !seen[$1]++'
+}
+
+cmd_check() {
+	local map
+	is_valid_agent_name "${1:-}" || die "usage: agent-status check <agent>"
+	map="$(find_map "$1")" || die "no adapter for agent: $1"
+	validate_map "$map" || exit 1
+	printf '%s: ok\n' "$map"
+}
+
+cmd_hooks() {
+	local map
+	is_valid_agent_name "${1:-}" || die "usage: agent-status hooks <agent>"
+	map="$(find_map "$1")" || die "no adapter for agent: $1"
+	validate_map "$map" || die "fix the map first: $map"
+	print_hooks "$1" "$map"
+}
+
+main() {
+	local cmd="${1:-}"
+	[ "$#" -eq 0 ] || shift
+	case "$cmd" in
+	emit) cmd_emit "$@" ;;
+	set) cmd_set "$@" ;;
+	clear) cmd_clear "$@" ;;
+	seen) cmd_seen "$@" ;;
+	refresh) refresh_summary ;;
+	jump) cmd_jump "$@" ;;
+	list) cmd_list ;;
+	check) cmd_check "$@" ;;
+	hooks) cmd_hooks "$@" ;;
+	-h | --help | help) usage ;;
+	'') usage >&2; exit 2 ;;
+	*) die "unknown command: $cmd (see agent-status --help)" ;;
+	esac
+}
+
+main "$@"

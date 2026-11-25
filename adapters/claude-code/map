@@ -1,0 +1,20 @@
+# Claude Code hook events. Format: <event>[:<matcher>] <state|clear> [<from-state>,...]
+# The optional third field applies the action only when the pane is in one of
+# those states. `agent-status hooks claude-code` generates settings from this.
+
+# compact is omitted: it can fire mid-turn.
+SessionStart:startup            idle
+SessionStart:resume             idle
+SessionStart:clear              idle
+UserPromptSubmit                working
+PreToolUse                      working
+PostToolUse                     working
+PostToolUseFailure              working
+Notification:permission_prompt  waiting
+Notification:elicitation_dialog waiting
+# Recovers panes left working/waiting by an interrupt, which fires no hook.
+Notification:idle_prompt        idle    working,waiting
+Stop                            done
+StopFailure                     error
+# Not on clear: SessionStart:clear follows it.
+SessionEnd:logout|prompt_input_exit|other clear
