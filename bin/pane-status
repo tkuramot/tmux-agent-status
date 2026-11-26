@@ -45,6 +45,7 @@ Pull requests:
 
 Reading:
   list [--require-schema N]   Print every pane's state as JSON.
+  version                     Print the plugin's version.
 
 Activities: working waiting idle error. --pane defaults to $TMUX_PANE.
 EOF
@@ -109,6 +110,19 @@ cmd_seen() {
 	mark_seen "$PANE"
 }
 
+# The version is the plugin checkout's commit, so it needs no bumping. A
+# directory that is not itself the top of a git checkout (e.g. inside another
+# repository) has none: there, the prefix is not empty or rev-parse fails.
+cmd_version() {
+	local version=unknown
+	# The environment must not point git at another repository.
+	unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+	if [ -z "$(git -C "$ROOT" rev-parse --show-prefix 2>/dev/null || echo outside)" ]; then
+		version="$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null)" || version=unknown
+	fi
+	printf 'pane-status %s\n' "$version"
+}
+
 cmd_check() {
 	local map
 	is_valid_agent_name "${1:-}" || die "usage: pane-status check <agent>"
@@ -138,6 +152,7 @@ main() {
 	refresh) cmd_refresh ;;
 	poll) cmd_poll ;;
 	list) cmd_list "$@" ;;
+	version | --version) cmd_version ;;
 	-h | --help | help) usage ;;
 	'') usage >&2; exit 2 ;;
 	*) die "unknown command: $cmd (see pane-status --help)" ;;

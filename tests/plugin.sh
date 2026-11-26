@@ -27,4 +27,26 @@ t wait-for -S pane-status-test
 eventually_eq "pane is dead" 1 t display-message -p -t "$P4" '#{pane_dead}'
 eventually_eq "a dead pane under remain-on-exit is cleared" "" activity "$P4"
 
+assert_eq "version is unknown outside a git checkout" "pane-status unknown" "$("$PS" version)"
+if command -v git >/dev/null 2>&1; then
+	cp -R "$WORK/plugin" "$WORK/checkout"
+	git -C "$WORK/checkout" init -q
+	git -C "$WORK/checkout" add -A
+	git -C "$WORK/checkout" -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+		commit -q -m init
+	assert_eq "version is the checkout's commit" \
+		"pane-status $(git -C "$WORK/checkout" rev-parse --short HEAD)" "$("$WORK/checkout/bin/pane-status" version)"
+	touch "$WORK/checkout/lib/new"
+	git -C "$WORK/checkout" add lib/new
+	assert_eq "version marks uncommitted changes" "-dirty" \
+		"$("$WORK/checkout/bin/pane-status" version | grep -o -- '-dirty')"
+	mkdir "$WORK/outer"
+	cp -R "$WORK/plugin" "$WORK/outer/plugin"
+	git -C "$WORK/outer" init -q
+	assert_eq "version ignores a repository the plugin is merely inside" \
+		"pane-status unknown" "$("$WORK/outer/plugin/bin/pane-status" version)"
+	assert_eq "version ignores GIT_DIR from the environment" "pane-status unknown" \
+		"$(GIT_DIR="$WORK/checkout/.git" "$PS" version)"
+fi
+
 finish

@@ -291,11 +291,16 @@ pane-status check <agent>
 pane-status hooks <agent>
 pane-status refresh
 pane-status list [--require-schema N]
+pane-status version
 ```
 
 `--pane` defaults to `$TMUX_PANE`. `set` and `emit` change nothing, not even
 the agent name, when the pane already has that activity. `refresh` fails when
 no poller runs.
+
+`version` prints the commit of the plugin checkout (`git describe`), e.g.
+`pane-status 58f3a28`, or `unknown` outside a git checkout.
+It is for bug reports; scripts should check `list --require-schema` instead.
 
 ## Limitations
 
