@@ -166,7 +166,7 @@ if [ -n "$HAVE_JQ" ]; then
 	ln -sf ../real.json "$settings"
 	install
 	assert_eq "install writes through a symlink" "../real.json $(generated)" "$(readlink "$settings") $(installed)"
-	assert_eq "install keeps the mode" "-rw-------" "$(ls -l "$WORK/real.json" | cut -c 1-10)"
+	assert_eq "install keeps the mode" "$WORK/real.json" "$(find "$WORK/real.json" -perm 600)"
 	for bad in '{' '{} {}' '[]'; do
 		printf '%s' "$bad" >"$settings"
 		"$PS" agent hooks claude-code --install 2>/dev/null

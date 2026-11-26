@@ -181,15 +181,17 @@ install_hooks() {
 		case "$file" in /*) ;; *) file="$dir/$file" ;; esac
 	done
 	if [ ! -e "$file" ]; then
-		mkdir -p "$(dirname "$file")" && : >"$file" || die "cannot create $file"
+		if ! { mkdir -p "$(dirname "$file")" && : >"$file"; }; then
+			die "cannot create $file"
+		fi
 	fi
 	merged="$(jq -n --argjson new "$hooks" --arg ours "/bin/pane-status' agent emit $1 " "$MERGE_JQ" "$file")" ||
 		die "not changed: could not merge into $file"
 	tmp="$file.pane-status.$$"
-	cp -p "$file" "$tmp" && printf '%s\n' "$merged" >"$tmp" && mv -f "$tmp" "$file" || {
+	if ! { cp -p "$file" "$tmp" && printf '%s\n' "$merged" >"$tmp" && mv -f "$tmp" "$file"; }; then
 		rm -f "$tmp"
 		die "cannot write $file"
-	}
+	fi
 	printf 'installed %s hooks in %s\n' "$1" "$3"
 }
 
