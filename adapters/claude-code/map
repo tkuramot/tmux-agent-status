@@ -1,6 +1,6 @@
 # Claude Code hook events. Format: <event>[:<matcher>] <activity|clear> [<from-activity>,...]
 # The optional third field applies the action only when the pane is in one of
-# those activities. `pane-status hooks claude-code` generates settings from this.
+# those activities. `pane-status agent hooks claude-code` generates settings from this.
 
 # compact is omitted: it can fire mid-turn.
 SessionStart:startup            idle

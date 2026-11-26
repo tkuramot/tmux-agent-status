@@ -13,7 +13,7 @@ if [ -z "$HAVE_JQ" ]; then
 fi
 
 P2="$(split_pane "$P1")"
-"$PS" set error --pane "$P1" --agent my-agent
+"$PS" agent set error --pane "$P1" --agent my-agent
 t rename-window -t "$P1" 'say "hi"' \; select-pane -t "$P1" -T 'a title'
 # shellcheck disable=SC2016
 assert_eq "list reports panes as documented" \

@@ -8,5 +8,5 @@
 [ "$PANE_STATUS_SOURCE" = agent ] || exit 0
 for pane in $PANE_STATUS_PANES; do
 	visible="$(tmux display-message -p -t "$pane" '#{&&:#{pane_active},#{&&:#{window_active},#{session_attached}}}')"
-	[ "$visible" != 1 ] || pane-status seen --pane "$pane"
+	[ "$visible" != 1 ] || pane-status agent seen --pane "$pane"
 done

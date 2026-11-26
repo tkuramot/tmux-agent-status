@@ -47,7 +47,7 @@ start_poller() {
 	if pid="$(poller_pid)"; then
 		kill -USR1 "$pid"
 	else
-		tmux run-shell -b "exec '$CLI' poll >/dev/null 2>&1"
+		tmux run-shell -b "exec '$CLI' pr poll >/dev/null 2>&1"
 	fi
 }
 
@@ -65,10 +65,10 @@ main() {
 	esac
 	clear_hooks
 	# Under remain-on-exit a dead pane keeps its options.
-	set_hook pane-died "run-shell -b \"'$CLI' clear --pane #{hook_pane}\""
+	set_hook pane-died "run-shell -b \"'$CLI' agent clear --pane #{hook_pane}\""
 	# The poller skips lookups while no client is attached. Without a poller
 	# (no gh, interval 0) refresh fails, which is not worth a message.
-	set_hook client-attached "run-shell -b \"'$CLI' refresh >/dev/null 2>&1 || :\""
+	set_hook client-attached "run-shell -b \"'$CLI' pr refresh >/dev/null 2>&1 || :\""
 	start_poller
 }
 

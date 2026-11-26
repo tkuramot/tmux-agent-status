@@ -10,6 +10,6 @@
 [ "$PANE_STATUS_SOURCE" = agent ] || exit 0
 for pane in $PANE_STATUS_PANES; do
 	if [ "$(tmux display-message -p -t "$pane" '#{@pane-status_agent_activity}:#{@pane-status_agent_seen}')" = idle:0 ]; then
-		exec pane-status refresh
+		exec pane-status pr refresh
 	fi
 done

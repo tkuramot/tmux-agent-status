@@ -25,7 +25,7 @@ the [recipes](#recipes). It promises four interfaces, documented below:
 - bash 3.2 or later (the macOS system bash works)
 - For pull requests: `git` 2.31 or later and `gh` (authenticated). Without
   `gh` the poller does not start.
-- `jq`, to install the Claude Code hooks and for some recipes
+- `jq`, for `pane-status agent hooks --install` and some recipes
 
 ## Installation
 
@@ -80,7 +80,7 @@ record.
 | `@pane-status_agent_name` | The agent, e.g. `claude-code`. |
 | `@pane-status_agent_activity` | `working`, `waiting`, `idle` or `error`. |
 | `@pane-status_agent_since` | When the activity last changed (Unix time). |
-| `@pane-status_agent_seen` | `1` if `pane-status seen` was called since the last change, else `0`. |
+| `@pane-status_agent_seen` | `1` if `pane-status agent seen` was called since the last change, else `0`. |
 | `@pane-status_pr_number` | The number of the pull request for the pane's branch. |
 | `@pane-status_pr_url` | Its URL. |
 | `@pane-status_pr_state` | `open`, `merged` or `closed`. |
@@ -176,26 +176,17 @@ The agent reports changes through its hooks. Only the adapter,
 
 ### Claude Code
 
-Print the hook settings generated from the adapter map:
+Merge the hooks generated from the adapter map into
+`~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR/settings.json` if set):
 
 ```sh
-pane-status hooks claude-code
+pane-status agent hooks claude-code --install
 ```
 
-Merge them into `~/.claude/settings.json` with `jq`. Your other hooks keep
-their order, hooks from a previous install (any path) are replaced, and a
-symlinked file stays a symlink:
-
-```sh
-f=~/.claude/settings.json
-[ -f "$f" ] || echo '{}' >"$f"
-merge='
-  def ours: (.command // "") | test("/bin/pane-status'"'"'? emit ");
-  .hooks = ((.hooks // {}) | map_values(map(.hooks |= map(select(ours | not)) | select(.hooks | length > 0)))
-    | with_entries(select(.value | length > 0)) as $kept
-    | reduce ($new.hooks | keys[]) as $k ($kept; .[$k] = ((.[$k] // []) + $new.hooks[$k])))'
-new="$(jq --argjson new "$(pane-status hooks claude-code)" "$merge" "$f")" && printf '%s\n' "$new" >"$f"
-```
+Run it again after upgrading or moving the plugin. It replaces the hooks of
+a previous install (any path) and leaves everything else in place; a symlinked
+file stays a symlink. Without `--install` it prints the settings for you to
+merge yourself.
 
 Event mapping (`adapters/claude-code/map`):
 
@@ -236,10 +227,10 @@ Event mapping (`adapters/claude-code/map`):
      `Bash` and `Bash|Edit`.
    - A user map replaces the built-in map of the same name.
 
-   Validate it with `pane-status check <agent>`: `emit` ignores invalid
+   Validate it with `pane-status agent check <agent>`: `emit` ignores invalid
    entries silently.
 
-2. Call `pane-status emit <agent> <event>` from the agent's hooks.
+2. Call `pane-status agent emit <agent> <event>` from the agent's hooks.
 
 `emit` is safe inside any agent's hook: it drains stdin without waiting for it
 to close, prints nothing and always exits 0. Outside tmux it does nothing.
@@ -247,9 +238,9 @@ to close, prints nothing and always exits 0. Outside tmux it does nothing.
 Agents without hooks can be wrapped and set activities directly:
 
 ```sh
-pane-status set working --agent my-agent
+pane-status agent set working --agent my-agent
 my-agent "$@"; rc=$?
-if [ "$rc" -eq 0 ]; then pane-status set idle; else pane-status set error; fi
+if [ "$rc" -eq 0 ]; then pane-status agent set idle; else pane-status agent set error; fi
 ```
 
 ## Pull requests
@@ -258,7 +249,7 @@ When the plugin loads, it starts one poller as a tmux job, which ends with the
 tmux server. Every `@pane-status-gh-interval` seconds while a client is attached,
 it finds the branch checked out in each pane and looks up the pull requests
 with one `gh` request per repository (worktrees included), however many panes
-and branches it has. Attaching a client and `pane-status refresh` make it look
+and branches it has. Attaching a client and `pane-status pr refresh` make it look
 up now.
 
 | Option | Default | Description |
@@ -282,16 +273,19 @@ bind g display-popup -E -w 90% -h 90% -d '#{pane_current_path}' gh-dash
 ## CLI
 
 ```
-pane-status emit <agent> <event>                  # from agent hooks
-pane-status set <activity> [--pane P] [--agent A]
-pane-status clear [--pane P]
-pane-status seen [--pane P]
-pane-status check <agent>
-pane-status hooks <agent>
-pane-status refresh
+pane-status agent emit <agent> <event>            # from agent hooks
+pane-status agent set <activity> [--pane P] [--agent A]
+pane-status agent clear [--pane P]
+pane-status agent seen [--pane P]
+pane-status agent check <agent>
+pane-status agent hooks <agent> [--install]
+pane-status pr refresh
 pane-status list [--require-schema N]
 pane-status version
 ```
+
+Commands are grouped by the source they act on; `list` and `version` cover
+every source.
 
 `--pane` defaults to `$TMUX_PANE`. `set` and `emit` change nothing, not even
 the agent name, when the pane already has that activity. `refresh` fails when
@@ -308,12 +302,12 @@ It is for bug reports; scripts should check `list --require-schema` instead.
   `ssh`) cannot report state.
 - agent: if an agent exits without its end event (a crash, `kill -9`), the
   last state stays until the pane closes. Clear it with
-  `pane-status clear --pane %N`.
+  `pane-status agent clear --pane %N`.
 - agent: state is per pane, not per tool call: with parallel tools or
   subagents, a tool finishing while a permission prompt is open switches the
   pane back to `working`.
 - gh: a new pane or a switched branch shows up at the next lookup, up to
-  `@pane-status-gh-interval` later; call `pane-status refresh` to look up now.
+  `@pane-status-gh-interval` later; call `pane-status pr refresh` to look up now.
 - gh: a failed lookup (offline, not authenticated) clears its panes until the
   next lookup.
 - gh: with several remotes, `gh` looks for the pull request in `upstream`,

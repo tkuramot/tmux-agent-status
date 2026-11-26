@@ -143,11 +143,54 @@ print_hooks() {
 			printf '\n      { '
 			case "$key" in *:*) printf '"matcher": %s, ' "$(json_string "${key#*:}")" ;; esac
 			printf '"hooks": [{ "type": "command", "timeout": 10, "command": %s }] }' \
-				"$(json_string "'$CLI' emit $agent '$key'")"
+				"$(json_string "'$CLI' agent emit $agent '$key'")"
 		done <"$map"
 		printf '\n    ]'
 	done
 	printf '\n  }\n}\n'
+}
+
+# Merges $new into the settings: drops the agent's hooks from an earlier
+# install (any path), then appends $new's. A group or
+# event is dropped only if it held nothing but ours. A blank file is {}.
+# shellcheck disable=SC2016
+MERGE_JQ='
+def ours: (objects | .command | strings | test($ours)) // false;
+def mine: (objects | .hooks | arrays | any(.[]; ours)) // false;
+def strip: if mine then .hooks |= map(select(ours | not)) else . end;
+def gone: mine and (strip | .hooks == []);
+def keep_event: if type == "array" and length > 0 then any(.[]; gone | not) else true end;
+def strip_event: if type == "array" then map(select(gone | not) | strip) else . end;
+
+[inputs] | if length > 1 then error("more than one JSON value") else .[0] // {} end
+| if type != "object" then error("not a JSON object") else . end
+| .hooks = (.hooks // {}
+	| with_entries(select(.value | keep_event) | .value |= strip_event)
+	| reduce ($new.hooks | to_entries[]) as $e (.; .[$e.key] = (.[$e.key] // []) + $e.value))'
+
+# install_hooks AGENT MAP FILE: merges the hooks into the settings FILE. A
+# symlink is followed, so it stays a symlink, and its target is replaced only
+# once the merge succeeded, by a copy that keeps its mode.
+install_hooks() {
+	local file="$3" hooks merged dir tmp
+	command -v jq >/dev/null 2>&1 || die "--install needs jq"
+	hooks="$(print_hooks "$1" "$2")" || exit 1
+	while [ -L "$file" ]; do
+		dir="$(cd -P "$(dirname "$file")" && pwd)" || die "cannot resolve $3"
+		file="$(readlink "$file")"
+		case "$file" in /*) ;; *) file="$dir/$file" ;; esac
+	done
+	if [ ! -e "$file" ]; then
+		mkdir -p "$(dirname "$file")" && : >"$file" || die "cannot create $file"
+	fi
+	merged="$(jq -n --argjson new "$hooks" --arg ours "/bin/pane-status' agent emit $1 " "$MERGE_JQ" "$file")" ||
+		die "not changed: could not merge into $file"
+	tmp="$file.pane-status.$$"
+	cp -p "$file" "$tmp" && printf '%s\n' "$merged" >"$tmp" && mv -f "$tmp" "$file" || {
+		rm -f "$tmp"
+		die "cannot write $file"
+	}
+	printf 'installed %s hooks in %s\n' "$1" "$3"
 }
 
 emit_event() {

@@ -27,23 +27,26 @@ unset source dir
 
 usage() {
 	cat <<'EOF'
-Usage: pane-status <command> [arguments]
+Usage: pane-status <group> <command> [arguments]
 
-Agent state:
-  emit <agent> <event>        Apply the adapter's action for an event. For
+agent: agent state
+  agent emit <agent> <event>  Apply the adapter's action for an event. For
                               agent hooks: discards stdin, prints nothing,
                               always exits 0.
-  set <activity> [--pane P] [--agent A]
-  clear [--pane P]
-  seen [--pane P]             Mark the current activity as seen.
-  check <agent>               Validate the agent's adapter map.
-  hooks <agent>               Print hook settings generated from the map.
+  agent set <activity> [--pane P] [--agent A]
+  agent clear [--pane P]
+  agent seen [--pane P]       Mark the current activity as seen.
+  agent check <agent>         Validate the agent's adapter map.
+  agent hooks <agent> [--install]
+                              Print hook settings generated from the map;
+                              with --install, merge them into Claude Code's
+                              settings.json instead (needs jq).
 
-Pull requests:
-  refresh                     Make the poller look up pull requests now.
-  poll                        Run the poller (the plugin starts it).
+pr: pull requests
+  pr refresh                  Make the poller look up pull requests now.
+  pr poll                     Run the poller (the plugin starts it).
 
-Reading:
+Every source:
   list [--require-schema N]   Print every pane's state as JSON.
   version                     Print the plugin's version.
 
@@ -92,7 +95,7 @@ cmd_emit() {
 
 cmd_set() {
 	parse_args "$@"
-	[ "${#POSITIONAL[@]}" -eq 1 ] || die "usage: pane-status set <activity> [--pane P] [--agent A]"
+	[ "${#POSITIONAL[@]}" -eq 1 ] || die "usage: pane-status agent set <activity> [--pane P] [--agent A]"
 	is_activity "${POSITIONAL[0]}" || die "unknown activity: ${POSITIONAL[0]} (expected: $ACTIVITIES)"
 	[ -z "$AGENT" ] || is_valid_agent_name "$AGENT" || die "invalid agent name: $AGENT"
 	set_activity "$PANE" "${POSITIONAL[0]}" "$AGENT"
@@ -100,13 +103,13 @@ cmd_set() {
 
 cmd_clear() {
 	parse_args "$@"
-	[ "${#POSITIONAL[@]}" -eq 0 ] || die "usage: pane-status clear [--pane P]"
+	[ "${#POSITIONAL[@]}" -eq 0 ] || die "usage: pane-status agent clear [--pane P]"
 	clear_agent "$PANE"
 }
 
 cmd_seen() {
 	parse_args "$@"
-	[ "${#POSITIONAL[@]}" -eq 0 ] || die "usage: pane-status seen [--pane P]"
+	[ "${#POSITIONAL[@]}" -eq 0 ] || die "usage: pane-status agent seen [--pane P]"
 	mark_seen "$PANE"
 }
 
@@ -125,21 +128,30 @@ cmd_version() {
 
 cmd_check() {
 	local map
-	is_valid_agent_name "${1:-}" || die "usage: pane-status check <agent>"
+	is_valid_agent_name "${1:-}" || die "usage: pane-status agent check <agent>"
 	map="$(find_map "$1")" || die "no adapter for agent: $1"
 	validate_map "$map" || exit 1
 	printf '%s: ok\n' "$map"
 }
 
+# Settings are in Claude Code's shape, so only it can be installed into.
 cmd_hooks() {
 	local map
-	is_valid_agent_name "${1:-}" || die "usage: pane-status hooks <agent>"
+	case "$#:${2:-}" in 1: | 2:--install) ;; *) set -- "" ;; esac
+	is_valid_agent_name "$1" || die "usage: pane-status agent hooks <agent> [--install]"
 	map="$(find_map "$1")" || die "no adapter for agent: $1"
 	validate_map "$map" || die "fix the map first: $map"
-	print_hooks "$1" "$map"
+	if [ "$#" -eq 1 ]; then
+		print_hooks "$1" "$map"
+	elif [ "$1" = claude-code ]; then
+		[ -n "${CLAUDE_CONFIG_DIR:-}${HOME:-}" ] || die "neither CLAUDE_CONFIG_DIR nor HOME is set"
+		install_hooks "$1" "$map" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+	else
+		die "--install supports claude-code only; merge the printed settings yourself"
+	fi
 }
 
-main() {
+cmd_agent() {
 	local cmd="${1:-}"
 	[ "$#" -eq 0 ] || shift
 	case "$cmd" in
@@ -149,8 +161,26 @@ main() {
 	seen) cmd_seen "$@" ;;
 	check) cmd_check "$@" ;;
 	hooks) cmd_hooks "$@" ;;
+	-h | --help | help) usage ;;
+	*) die "unknown command: agent ${cmd:-(none)} (see pane-status --help)" ;;
+	esac
+}
+
+cmd_pr() {
+	case "${1:-}" in
 	refresh) cmd_refresh ;;
 	poll) cmd_poll ;;
+	-h | --help | help) usage ;;
+	*) die "unknown command: pr ${1:-(none)} (see pane-status --help)" ;;
+	esac
+}
+
+main() {
+	local cmd="${1:-}"
+	[ "$#" -eq 0 ] || shift
+	case "$cmd" in
+	agent) cmd_agent "$@" ;;
+	pr) cmd_pr "$@" ;;
 	list) cmd_list "$@" ;;
 	version | --version) cmd_version ;;
 	-h | --help | help) usage ;;

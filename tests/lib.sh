@@ -73,7 +73,7 @@ finish() {
 
 opt() { t display-message -p -t "$1" "#{@pane-status_$2}"; }
 activity() { opt "$1" agent_activity; }
-emit() { TMUX_PANE="$1" "$PS" emit claude-code "$2" </dev/null; }
+emit() { TMUX_PANE="$1" "$PS" agent emit claude-code "$2" </dev/null; }
 # New panes start in a given directory, else in $WORK: never in the
 # repository the tests run from, which the poller would look up.
 new_pane() { t new-window -d -P -F '#{pane_id}' -t test -c "$1"; }
@@ -83,7 +83,7 @@ split_pane() { t split-window -d -P -F '#{pane_id}' -t "$1" -c "${2:-$WORK}"; }
 # listed them.
 pollers() {
 	local pids pid ppid n=0
-	pids=" $(pgrep -f "$PS poll" | xargs) "
+	pids=" $(pgrep -f "$PS pr poll" | xargs) "
 	for pid in $pids; do
 		ppid="$(ps -o ppid= -p "$pid" | tr -d ' ')"
 		[ -n "$ppid" ] || continue

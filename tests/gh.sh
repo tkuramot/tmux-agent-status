@@ -82,21 +82,21 @@ assert_eq "list reports the pull request" '{"number":8,"url":"https://github.com
 
 : >"$WORK/notified"
 rm -f "$WORK/gh.log"
-"$PS" refresh
+"$PS" pr refresh
 eventually_eq "a refresh looks up again" 2 line_count "$WORK/gh.log"
 sleep 0.3
 assert_eq "unchanged pull requests notify nothing" "" "$(notified)"
 
 git -C "$WORK/rc" checkout -q feature
 rm "$WORK/prs/rb.json"
-"$PS" refresh
+"$PS" pr refresh
 eventually_eq "a failed lookup clears its panes" "    " record "$pb"
 assert_eq "a branch without a pull request has none" "    " "$(record "$pc")"
 
 t set-option -g remain-on-exit on
 dead="$(t new-window -d -P -F '#{pane_id}' -t test -c "$WORK/ra" true)"
 eventually_eq "pane is dead" 1 t display-message -p -t "$dead" '#{pane_dead}'
-"$PS" refresh
+"$PS" pr refresh
 sleep 0.5
 assert_eq "a dead pane is not looked up" "    " "$(record "$dead")"
 t kill-pane -t "$dead" \; set-option -gu remain-on-exit
@@ -104,10 +104,10 @@ t kill-pane -t "$dead" \; set-option -gu remain-on-exit
 # --- stopping ---------------------------------------------------------------
 
 t set-option -g @pane-status-gh-interval 0
-"$PS" refresh
+"$PS" pr refresh
 eventually_eq "interval 0 clears pull requests" "    " record "$pa"
 eventually_eq "interval 0 stops the poller" 0 pollers
-"$PS" refresh 2>/dev/null
+"$PS" pr refresh 2>/dev/null
 assert_eq "refresh fails without a poller" 1 "$?"
 t -C attach-session -t test </dev/null >/dev/null 2>&1
 sleep 0.5

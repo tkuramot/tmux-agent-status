@@ -13,17 +13,17 @@ P7="$(split_pane "$P3")"
 
 t source-file "$RECIPES/formats/formats.tmux"
 render() { t display-message -p -t "$1" "$(t show-option -gqv "$2")"; }
-"$PS" set working --pane "$P3"
-"$PS" set idle --pane "$P7"
-"$PS" set waiting --pane "$P7"
-"$PS" set idle --pane "$P7"
+"$PS" agent set working --pane "$P3"
+"$PS" agent set idle --pane "$P7"
+"$PS" agent set waiting --pane "$P7"
+"$PS" agent set idle --pane "$P7"
 t set-option -p -t "$P3" @pane-status_pr_number 42 \; set-option -p -t "$P3" @pane-status_pr_state open \; \
 	set-option -p -t "$P3" @pane-status_pr_draft 0 \; set-option -p -t "$P3" @pane-status_pr_review required \; \
 	set-option -p -t "$P3" @pane-status_pr_checks failure
 assert_eq "formats: window shows the most urgent state and the pull request" "1 zsh (working) #42 review ✗" \
 	"$(render "$P3" window-status-format | sed 's/^1 [^ ]*/1 zsh/')"
 assert_eq "formats: an unseen idle pane is done" " (done) " "$(render "$P7" pane-border-format)"
-"$PS" set error --pane "$P7"
+"$PS" agent set error --pane "$P7"
 assert_eq "formats: error outranks working" "(error)" "$(render "$P3" window-status-format | grep -o '(error)')"
 
 if [ -n "$HAVE_JQ" ]; then
@@ -42,7 +42,7 @@ if [ -n "$HAVE_JQ" ]; then
 	chmod +x "$BIN/fzf"
 	t select-window -t "$P1"
 	eventually_eq "agents: starting elsewhere" "$P1" current_pane
-	"$PS" set waiting --pane "$P3"
+	"$PS" agent set waiting --pane "$P3"
 	sh "$RECIPES/agents/agents.sh"
 	eventually_eq "agents: jumps to the most urgent pane" "$P3" current_pane
 	assert_eq "agents: the header counts every state" "$(printf '\t')waiting 1 · error 1 · done 0 · working 0 · idle 0" \
@@ -57,9 +57,9 @@ cp "$RECIPES/auto-seen/on-change.d/auto-seen" "$SUBSCRIBERS/"
 t source-file "$RECIPES/auto-seen/auto-seen.tmux"
 t select-pane -t "$P3"
 eventually_eq "auto-seen: on screen" "$P3" current_pane
-"$PS" set idle --pane "$P3"
+"$PS" agent set idle --pane "$P3"
 eventually_eq "auto-seen: a change on screen is seen" 1 opt "$P3" agent_seen
-"$PS" set working --pane "$P7"
+"$PS" agent set working --pane "$P7"
 assert_eq "auto-seen: a change off screen is not" 0 "$(opt "$P7" agent_seen)"
 t select-pane -t "$P7"
 eventually_eq "auto-seen: switching to a pane marks it seen" 1 opt "$P7" agent_seen
@@ -77,10 +77,10 @@ if command -v git >/dev/null 2>&1; then
 	eventually_eq "refresh-on-idle: the poller looked up once" 1 line_count "$WORK/gh.log"
 	mkdir -p "$SUBSCRIBERS"
 	cp "$RECIPES/refresh-on-idle/on-change.d/refresh-on-idle" "$SUBSCRIBERS/"
-	"$PS" set working --pane "$pr"
+	"$PS" agent set working --pane "$pr"
 	sleep 0.3
 	assert_eq "refresh-on-idle: working does not look up" 1 "$(line_count "$WORK/gh.log")"
-	"$PS" set idle --pane "$pr"
+	"$PS" agent set idle --pane "$pr"
 	eventually_eq "refresh-on-idle: going idle looks up" 2 line_count "$WORK/gh.log"
 fi
 

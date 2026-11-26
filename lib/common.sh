@@ -43,7 +43,7 @@ config_dir() {
 # mistaken for the poller.
 is_poller() {
 	case "$1" in '' | *[!0-9]*) return 1 ;; esac
-	case "$(ps -p "$1" -o args= 2>/dev/null)" in *"pane-status poll"*) return 0 ;; *) return 1 ;; esac
+	case "$(ps -p "$1" -o args= 2>/dev/null)" in *"pane-status pr poll"*) return 0 ;; *) return 1 ;; esac
 }
 
 # Prints the poller's PID if it is running.
