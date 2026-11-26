@@ -5,8 +5,11 @@ pull request of the branch checked out there — in the status line, pane
 borders and `choose-tree`.
 
 ```
-0 zsh  1 api (waiting)  2 web (working) #42 review ✗  3 docs #40 merged
+0 zsh 1 api (waiting) 2 web (working) #42 review ✗ 3 docs #40 merged
 ```
+
+(The window list with the [Quick start](#quick-start) formats: each window's
+agent state, then the pull request of its active pane.)
 
 Scope: per-pane state only. Browsing and acting on pull requests is left to
 `gh` and tools such as [gh-dash](https://github.com/dlvhdr/gh-dash).
@@ -24,14 +27,17 @@ Both are enabled by default. Choose with `@pane-status-modules`:
 set -g @pane-status-modules 'agent'
 ```
 
-A disabled `gh` module clears its state on the next tick. To disable `agent`,
-also remove its hooks from your agent, or it keeps reporting state.
+Removing `gh` clears its values on the next tick; reload tmux.conf to drop
+its placeholders. To disable `agent`, also remove its hooks from your agent,
+or it keeps reporting state.
 
 ## Requirements
 
 - tmux 3.8 or later
 - bash 3.2 or later (the macOS system bash works)
-- `git` and `gh` (authenticated) for the `gh` module
+- `git` and `gh` (authenticated) for the `gh` module; without them it shows
+  nothing
+- `jq`, to install the Claude Code hooks
 
 ## Installation
 
@@ -53,17 +59,32 @@ git clone https://github.com/tkuramot/tmux-pane-status ~/.tmux/plugins/tmux-pane
 run-shell ~/.tmux/plugins/tmux-pane-status/pane-status.tmux
 ```
 
-Set the formats that use the placeholders **before** the plugin is loaded
-(before `run '~/.tmux/plugins/tpm/tpm'`), and after any theme that sets them.
+## Quick start
+
+1. Install the plugin as above.
+2. In tmux.conf, above the plugin line (`run '~/.tmux/plugins/tpm/tpm'` or
+   `run-shell …`) and below any theme that sets these options, add:
+
+   ```tmux
+   set -g window-status-format         '#I #W#{?#{agent_window_state}, #{agent_window_state_icon},}#{?#{gh_pr_state}, #{gh_status},}'
+   set -g window-status-current-format '#I #W#{?#{agent_window_state}, #{agent_window_state_icon},}#{?#{gh_pr_state}, #{gh_status},}'
+   ```
+
+   To show each pane's own state instead, use the pane borders:
+
+   ```tmux
+   set -g pane-border-status top
+   set -g pane-border-format ' #{agent_state_icon} #{gh_status} '
+   ```
+
+3. Reload tmux.conf (`tmux source ~/.tmux.conf`).
+4. For the `agent` module, install your agent's hooks
+   ([Claude Code](#claude-code)). The `gh` module needs no setup.
+
+`prefix s` and `prefix w` show both modules with no format changes, unless
+you have rebound those keys.
 
 ## Placeholders
-
-```tmux
-set -g window-status-format         '#I #W#{?#{agent_window_state}, #{agent_window_state_icon},}'
-set -g window-status-current-format '#I #W#{?#{agent_window_state}, #{agent_window_state_icon},}'
-set -g pane-border-status top
-set -g pane-border-format ' #{agent_state_icon} #{gh_status} '
-```
 
 Names follow one scheme:
 
@@ -76,11 +97,11 @@ Names follow one scheme:
 | Placeholder | Expands to |
 | --- | --- |
 | `#{agent_state}` / `#{agent_state_icon}` | The pane's agent state. |
-| `#{agent_window_state}` / `#{agent_window_state_icon}` | The highest agent state among the window's panes. |
+| `#{agent_window_state}` / `#{agent_window_state_icon}` | The highest-priority agent state among the window's panes. |
 | `#{gh_pr_number}` | The number of the pull request for the pane's branch. |
 | `#{gh_pr_state}` / `#{gh_pr_state_icon}` | Its state. |
 | `#{gh_checks}` / `#{gh_checks_icon}` | Its checks, for open pull requests that have any. |
-| `#{gh_status}` | `#<number> <state icon> <checks icon>`, e.g. `#42 review ✗`. |
+| `#{gh_status}` | `#<number> <state icon> <checks icon>`, e.g. `#42 review ✗` (no checks icon when there are none). |
 
 Write each placeholder exactly as `#{name}`; inside other formats nest it, as
 in `#{?#{gh_pr_state},…,}`, since `#{?gh_pr_state,…}` is not expanded.
@@ -97,9 +118,9 @@ set -g pane-border-format '#{?#{gh_pr_state}, ###{gh_pr_number}#{?#{==:#{gh_chec
 ## Values and icons
 
 The icon of each value is `@pane-status-<field>-icon-<value>`, where
-`<field>` is the icon placeholder's name without `_icon`, with `-` for `_`
-(e.g. `#{gh_pr_state_icon}` uses `@pane-status-gh-pr-state-icon-review`).
-Unset or empty means the default.
+`<field>` is `agent-state`, `gh-pr-state` or `gh-checks`
+(`#{agent_window_state_icon}` also uses `agent-state`). Unset or empty means
+the default.
 
 | Field | Value | Meaning | Default icon |
 | --- | --- | --- | --- |
@@ -109,14 +130,14 @@ Unset or empty means the default.
 | `agent-state` | `done` | The agent finished and you have not looked at the pane yet. | `(done)` |
 | `agent-state` | `idle` | The agent is running and waiting for input. | `(idle)` |
 | `gh-pr-state` | `draft` | Draft. | `draft` |
-| `gh-pr-state` | `review` | Open, not yet approved. | `review` |
+| `gh-pr-state` | `review` | Open; not approved and no changes requested. Repositories that require no review always show this. | `review` |
 | `gh-pr-state` | `changes` | Changes requested. | `changes` |
 | `gh-pr-state` | `approved` | Approved. | `approved` |
 | `gh-pr-state` | `merged` | Merged. | `merged` |
 | `gh-pr-state` | `closed` | Closed without merging. | `closed` |
-| `gh-checks` | `failure` | A check failed, errored, timed out or was cancelled. | `✗` |
-| `gh-checks` | `pending` | No check failed and some are still running. | `…` |
-| `gh-checks` | `success` | Every check passed or was skipped. | `✓` |
+| `gh-checks` | `failure` | A check failed, errored, timed out, was cancelled, failed to start or needs action. | `✗` |
+| `gh-checks` | `pending` | No check failed and some are queued or running. | `…` |
+| `gh-checks` | `success` | Every check passed, was skipped, neutral or stale. | `✓` |
 
 Agent states are listed highest priority first. `gh-pr-state` is this
 plugin's classification, not GitHub's `state` (open, closed, merged).
@@ -127,17 +148,16 @@ set -g @pane-status-gh-pr-state-icon-review 'in review'
 ```
 
 Icon changes apply on the next redraw. To hide a value, set its icon to `#[]`.
-
-- Agent defaults differ from tmux's window flags (`*`, `-`, `#`, `!`, `~`,
-  `M`, `Z`) and use the surrounding colours, so they blend into any theme.
-- For your own icons, end with the matching `no...` attribute or wrap colours
-  in `#[push-default]` ... `#[default]#[pop-default]`, rather than
-  `#[default]`, which resets to the status line style.
+Defaults are plain text in the surrounding colours, so they suit any theme.
+For your own icons, end with the matching `no...` attribute or wrap colours in
+`#[push-default]` ... `#[default]#[pop-default]`, rather than `#[default]`,
+which resets to the status line style.
 
 ## Session and window tree
 
-`prefix s` and `prefix w` (`choose-tree`) show each row's agent state and
-pull request after its name. The plugin rebinds these keys only while they
+`prefix s` and `prefix w` (`choose-tree`) show the agent state after each
+session, window and pane, and the pull request after each pane and window
+(its active pane). The plugin rebinds these keys only while they
 have tmux's default binding.
 
 `@pane-status-choose-tree` lists the modules shown, in order; `on` (the
@@ -158,10 +178,14 @@ bind-key s choose-tree -s -F '#{E:@pane-status_tree_format}'
 | Option | Default | Description |
 | --- | --- | --- |
 | `@pane-status-modules` | `agent gh` | Enabled modules. |
-| `@pane-status-choose-tree` | `on` | Modules shown in `prefix s` / `prefix w`, `on` or `off`. |
+| `@pane-status-choose-tree` | `on` | Modules shown in `prefix s` / `prefix w`, in order; `on` for all enabled modules, `off` for tmux's own format. |
 | `@pane-status-<field>-icon-<value>` | see [Values and icons](#values-and-icons) | Icon for a value. |
 | `@pane-status-agent-auto-seen` | `on` | Turn `done` into `idle` once the pane is viewed in an attached session. |
 | `@pane-status-gh-ttl` | `60` | Seconds a pull request lookup is cached. |
+
+`@pane-status-modules` and `@pane-status-choose-tree` take effect when the
+plugin loads; reload tmux.conf after changing them. The others apply on the
+next redraw.
 
 ## agent module
 
@@ -185,7 +209,7 @@ AS=~/.tmux/plugins/tmux-pane-status/modules/agent/agent-status
 f=~/.claude/settings.json
 [ -f "$f" ] || echo '{}' >"$f"
 merge='
-  def ours: any(.hooks[]?; .command | test("/(scripts|modules/agent)/agent-status"));
+  def ours: any(.hooks[]?; (.command // "") | test("/(scripts|modules/agent)/agent-status"));
   .hooks = ((.hooks // {}) | map_values(map(select(ours | not))) as $kept
     | reduce ($new.hooks | keys[]) as $k ($kept; .[$k] = ((.[$k] // []) + $new.hooks[$k])))'
 new="$(jq --argjson new "$("$AS" hooks claude-code)" "$merge" "$f")" && printf '%s\n' "$new" >"$f"
@@ -200,13 +224,32 @@ Event mapping (`modules/agent/adapters/claude-code/map`):
 | `Notification` (`permission_prompt`, `elicitation_dialog`) | `waiting` |
 | `Stop` | `done` |
 | `StopFailure` | `error` |
-| `SessionEnd` (except `clear`) | cleared |
+| `SessionEnd` (`logout`, `prompt_input_exit`, `other`) | cleared |
 
 - `SessionStart` with `compact` is not hooked because it can fire mid-turn.
 - Interrupting Claude with Esc fires no hook (not even `idle_prompt` later),
   so the pane stays `working` until the next prompt.
 - Subagents report through the same pane: while a background subagent runs
   after the main turn has ended, the pane shows `working`.
+
+### CLI
+
+```
+agent-status emit <agent> <event>                  # from agent hooks
+agent-status set <state> [--pane P] [--agent A]
+agent-status clear [--pane P]
+agent-status seen [--pane P]
+agent-status list
+agent-status check <agent>
+agent-status hooks <agent>
+```
+
+`--pane` defaults to `$TMUX_PANE`. To run it by hand, symlink it onto your
+`PATH` (a copy cannot find its adapters):
+
+```sh
+ln -s ~/.tmux/plugins/tmux-pane-status/modules/agent/agent-status ~/.local/bin/agent-status
+```
 
 ### Adding another agent
 
@@ -246,40 +289,22 @@ my-agent "$@"; rc=$?
 if [ "$rc" -eq 0 ]; then agent-status set done; else agent-status set error; fi
 ```
 
-### CLI
-
-```
-agent-status emit <agent> <event>                  # from agent hooks
-agent-status set <state> [--pane P] [--agent A]
-agent-status clear [--pane P]
-agent-status seen [--pane P]
-agent-status list
-agent-status check <agent>
-agent-status hooks <agent>
-```
-
-`--pane` defaults to `$TMUX_PANE`. To run it by hand, symlink it onto your
-`PATH` (a copy cannot find its adapters):
-
-```sh
-ln -s ~/.tmux/plugins/tmux-pane-status/modules/agent/agent-status ~/.local/bin/agent-status
-```
-
 ## gh module
 
-`choose-tree` lists every pane, so one job refreshes them all: the plugin
-appends `#(…/gh-status tick)`, which prints nothing, to the global
-`status-right`. tmux runs it every `status-interval` for each attached
-client. Each tick resolves every pane's repository and branch, reads the
-cache, and looks up stale entries with `gh pr view` in the background. A
-lock and the cache keep it to about one lookup per repository and branch per
-`@pane-status-gh-ttl`, however many panes and clients share it.
+The plugin appends `#(…/gh-status tick)`, which prints nothing, to the global
+`status-right`. One job updates every pane, including panes not on screen,
+since `choose-tree` shows them all. tmux runs it every `status-interval` for
+each attached client. Each tick resolves every pane's repository and branch,
+reads the cache, and looks up stale entries with `gh pr view` in the
+background. A lock and the cache keep it to about one lookup per repository
+and branch per `@pane-status-gh-ttl`, however many panes and clients share it.
 
 Merged and closed pull requests are still found for their branch, so a pane
 shows `merged` until you switch branches.
 
 To browse pull requests of a pane's repository, open gh-dash in a popup; it
-filters to the repository of the directory it starts in:
+filters to the repository of the directory it starts in (use `gh dash` if you
+installed it as a `gh` extension):
 
 ```tmux
 bind g display-popup -E -w 90% -h 90% -d '#{pane_current_path}' gh-dash
@@ -300,6 +325,11 @@ bind g display-popup -E -w 90% -h 90% -d '#{pane_current_path}' gh-dash
   theme that later overwrites `status-right` drops the refresh job.
 - gh: a failed lookup (offline, not authenticated) shows nothing until the
   next lookup.
+- gh: with several remotes, `gh` looks for the pull request in `upstream`,
+  `github` or `origin`, in that order, unless `gh repo set-default` says
+  otherwise.
+- gh: every tick runs `git` once per pane; with many panes and a short
+  `status-interval`, raise the interval.
 - The install path must not contain `'`, `"`, `$`, `\`, `` ` ``, `#`, `(` or `)`.
 
 ## Development
