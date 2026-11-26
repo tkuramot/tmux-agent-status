@@ -110,8 +110,10 @@ tree_item() {
 
 # Fragments of the modules in @pane-status-choose-tree, in its order.
 select_tree() {
-	local name i
+	local name i picked=" "
 	for name in $1; do
+		case "$picked" in *" $name "*) continue ;; esac
+		picked="$picked$name "
 		for ((i = 0; i < ${#loaded[@]}; i++)); do
 			[ "${loaded[i]}" = "$name" ] || continue
 			TREE_PANE="$TREE_PANE${tree_panes[i]}"

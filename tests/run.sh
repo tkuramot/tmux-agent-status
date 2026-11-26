@@ -349,6 +349,10 @@ EOF
 	t set-option -g @pane-status-choose-tree 'gh agent'
 	"$PLUGIN"
 	assert_eq "choose-tree lists modules in the given order" gh "$(tree_order)"
+	t set-option -g @pane-status-choose-tree 'agent agent'
+	"$PLUGIN"
+	assert_eq "choose-tree shows a module once" 1 \
+		"$(t show-option -gqv @pane-status_tree_format | grep -oF 'm:*waiting*,#{@pane-status_agent_state} }' | wc -l | tr -d ' ')"
 	t set-option -g @pane-status-choose-tree agent
 	"$PLUGIN"
 	case "$(t show-option -gqv @pane-status_tree_format)" in *_gh_*) r=no ;; *) r=ok ;; esac

@@ -82,6 +82,8 @@ Names follow one scheme:
 | `#{gh_checks}` / `#{gh_checks_icon}` | Its checks, for open pull requests that have any. |
 | `#{gh_status}` | `#<number> <state icon> <checks icon>`, e.g. `#42 review ✗`. |
 
+Write each placeholder exactly as `#{name}`; inside other formats nest it, as
+in `#{?#{gh_pr_state},…,}`, since `#{?gh_pr_state,…}` is not expanded.
 Placeholders are expanded in the **global** values of `status-left`,
 `status-right`, `window-status-format`, `window-status-current-format` and
 `pane-border-format`; session or window-local values are left alone. Values
