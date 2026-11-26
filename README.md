@@ -59,63 +59,72 @@ Set the formats that use the placeholders **before** the plugin is loaded
 ## Placeholders
 
 ```tmux
-set -g window-status-format         '#I #W#{?#{agent_state}, #{agent_status},}'
-set -g window-status-current-format '#I #W#{?#{agent_state}, #{agent_status},}'
+set -g window-status-format         '#I #W#{?#{agent_window_state}, #{agent_window_state_icon},}'
+set -g window-status-current-format '#I #W#{?#{agent_window_state}, #{agent_window_state_icon},}'
 set -g pane-border-status top
-set -g pane-border-format ' #{agent_pane_status} #{gh_status} '
+set -g pane-border-format ' #{agent_state_icon} #{gh_status} '
 ```
+
+Names follow one scheme:
+
+- `#{<module>_<field>}` is the field's value; `#{<module>_<field>_icon}` is
+  its icon. Values are empty when there is nothing to show.
+- Unqualified names refer to the pane (in window and status formats, the
+  window's active pane); `_window_` names aggregate the window's panes.
+- `#{<module>_status}` combines a module's fields, for modules with several.
 
 | Placeholder | Expands to |
 | --- | --- |
-| `#{agent_status}` | Icon for the window's agent state (the highest of its panes). |
-| `#{agent_state}` | That state's name (empty if no agent). |
-| `#{agent_pane_status}` | Icon for the pane's agent state. |
-| `#{agent_pane_state}` | The pane's agent state name. |
-| `#{gh_status}` | `#<number> <state> <checks>` for the pane's pull request, e.g. `#42 review ✗`. |
-| `#{gh_state}` | The pull request state name (empty if none). |
-
-In window formats, `gh_*` refers to the window's active pane.
+| `#{agent_state}` / `#{agent_state_icon}` | The pane's agent state. |
+| `#{agent_window_state}` / `#{agent_window_state_icon}` | The highest agent state among the window's panes. |
+| `#{gh_pr_number}` | The number of the pull request for the pane's branch. |
+| `#{gh_pr_state}` / `#{gh_pr_state_icon}` | Its state. |
+| `#{gh_checks}` / `#{gh_checks_icon}` | Its checks, for open pull requests that have any. |
+| `#{gh_status}` | `#<number> <state icon> <checks icon>`, e.g. `#42 review ✗`. |
 
 Placeholders are expanded in the **global** values of `status-left`,
 `status-right`, `window-status-format`, `window-status-current-format` and
-`pane-border-format`; session or window-local values are left alone. State
-names work in conditionals:
+`pane-border-format`; session or window-local values are left alone. Values
+work in conditionals:
 
 ```tmux
-set -g window-status-format '#{?#{==:#{agent_state},waiting},#[bg=red],}#I #W'
+set -g window-status-format '#{?#{==:#{agent_window_state},waiting},#[bg=red],}#I #W'
+set -g pane-border-format '#{?#{gh_pr_state}, ###{gh_pr_number}#{?#{==:#{gh_checks},failure}, #[fg=red]failed#[fg=default],},}'
 ```
 
-## States
+## Values and icons
 
-Each state is shown by its icon, `@pane-status-<module>-icon-<state>`. Unset
-or empty means the default.
+The icon of each value is `@pane-status-<field>-icon-<value>`, where
+`<field>` is the icon placeholder's name without `_icon`, with `-` for `_`
+(e.g. `#{gh_pr_state_icon}` uses `@pane-status-gh-pr-state-icon-review`).
+Unset or empty means the default.
 
-| Module | State | Meaning | Default icon |
+| Field | Value | Meaning | Default icon |
 | --- | --- | --- | --- |
-| agent | `waiting` | The agent needs you (e.g. a permission prompt). | `(waiting)` |
-| agent | `error` | The agent stopped on an error. | `(error)` |
-| agent | `working` | The agent is busy. | `(working)` |
-| agent | `done` | The agent finished and you have not looked at the pane yet. | `(done)` |
-| agent | `idle` | The agent is running and waiting for input. | `(idle)` |
-| gh | `draft` | Draft pull request. | `draft` |
-| gh | `review` | Open, not yet approved. | `review` |
-| gh | `changes` | Changes requested. | `changes` |
-| gh | `approved` | Approved. | `approved` |
-| gh | `merged` | Merged. | `merged` |
-| gh | `closed` | Closed without merging. | `closed` |
-| gh | `failure` | A check failed, errored, timed out or was cancelled. | `✗` |
-| gh | `pending` | No check failed and some are still running. | `…` |
-| gh | `success` | Every check passed or was skipped. | `✓` |
+| `agent-state` | `waiting` | The agent needs you (e.g. a permission prompt). | `(waiting)` |
+| `agent-state` | `error` | The agent stopped on an error. | `(error)` |
+| `agent-state` | `working` | The agent is busy. | `(working)` |
+| `agent-state` | `done` | The agent finished and you have not looked at the pane yet. | `(done)` |
+| `agent-state` | `idle` | The agent is running and waiting for input. | `(idle)` |
+| `gh-pr-state` | `draft` | Draft. | `draft` |
+| `gh-pr-state` | `review` | Open, not yet approved. | `review` |
+| `gh-pr-state` | `changes` | Changes requested. | `changes` |
+| `gh-pr-state` | `approved` | Approved. | `approved` |
+| `gh-pr-state` | `merged` | Merged. | `merged` |
+| `gh-pr-state` | `closed` | Closed without merging. | `closed` |
+| `gh-checks` | `failure` | A check failed, errored, timed out or was cancelled. | `✗` |
+| `gh-checks` | `pending` | No check failed and some are still running. | `…` |
+| `gh-checks` | `success` | Every check passed or was skipped. | `✓` |
 
-Agent states are listed highest priority first; a window shows the highest
-state of its panes. Checks are shown for open pull requests that have any.
+Agent states are listed highest priority first. `gh-pr-state` is this
+plugin's classification, not GitHub's `state` (open, closed, merged).
 
 ```tmux
-set -g @pane-status-agent-icon-waiting '#[fg=red]?#[fg=default]'
-set -g @pane-status-gh-icon-review 'in review'
+set -g @pane-status-agent-state-icon-waiting '#[fg=red]?#[fg=default]'
+set -g @pane-status-gh-pr-state-icon-review 'in review'
 ```
 
-Icon changes apply on the next redraw. To hide a state, set its icon to `#[]`.
+Icon changes apply on the next redraw. To hide a value, set its icon to `#[]`.
 
 - Agent defaults differ from tmux's window flags (`*`, `-`, `#`, `!`, `~`,
   `M`, `Z`) and use the surrounding colours, so they blend into any theme.
@@ -127,8 +136,16 @@ Icon changes apply on the next redraw. To hide a state, set its icon to `#[]`.
 
 `prefix s` and `prefix w` (`choose-tree`) show each row's agent state and
 pull request after its name. The plugin rebinds these keys only while they
-have tmux's default binding; set `@pane-status-choose-tree` to `off` to keep
-tmux's own format. For your own `choose-tree` bindings:
+have tmux's default binding.
+
+`@pane-status-choose-tree` lists the modules shown, in order; `on` (the
+default) means every enabled module, and `off` keeps tmux's own format:
+
+```tmux
+set -g @pane-status-choose-tree 'gh agent'
+```
+
+For your own `choose-tree` bindings:
 
 ```tmux
 bind-key s choose-tree -s -F '#{E:@pane-status_tree_format}'
@@ -139,8 +156,8 @@ bind-key s choose-tree -s -F '#{E:@pane-status_tree_format}'
 | Option | Default | Description |
 | --- | --- | --- |
 | `@pane-status-modules` | `agent gh` | Enabled modules. |
-| `@pane-status-choose-tree` | `on` | Show states in `prefix s` / `prefix w`. |
-| `@pane-status-<module>-icon-<state>` | see [States](#states) | Icon for a state. |
+| `@pane-status-choose-tree` | `on` | Modules shown in `prefix s` / `prefix w`, `on` or `off`. |
+| `@pane-status-<field>-icon-<value>` | see [Values and icons](#values-and-icons) | Icon for a value. |
 | `@pane-status-agent-auto-seen` | `on` | Turn `done` into `idle` once the pane is viewed in an attached session. |
 | `@pane-status-gh-ttl` | `60` | Seconds a pull request lookup is cached. |
 

@@ -3,8 +3,7 @@
 
 AGENT_CLI="'$CURRENT_DIR/modules/agent/agent-status'"
 
-agent_default() { printf '(%s)' "$1"; }
-agent_icon() { icon agent "$1"; }
+agent_icon() { icon agent-state "$1" "($1)"; }
 agent_name() { printf '%s' "$1"; }
 agent_tree_icon() { tree_item "$(agent_icon "$1")"; }
 
@@ -14,10 +13,10 @@ AGENT_WINDOW="#{P:#{$OPT_AGENT_STATE} }"
 AGENT_SESSION="#{W:#{P:#{$OPT_AGENT_STATE} }}"
 
 interpolations+=(
-	"#{agent_status}" "$(chain "$AGENT_WINDOW" "$AGENT_STATES" agent_icon)"
-	"#{agent_state}" "$(chain "$AGENT_WINDOW" "$AGENT_STATES" agent_name)"
-	"#{agent_pane_status}" "$(chain "$AGENT_PANE" "$AGENT_STATES" agent_icon)"
-	"#{agent_pane_state}" "#{$OPT_AGENT_STATE}"
+	"#{agent_state}" "#{$OPT_AGENT_STATE}"
+	"#{agent_state_icon}" "$(chain "$AGENT_PANE" "$AGENT_STATES" agent_icon)"
+	"#{agent_window_state}" "$(chain "$AGENT_WINDOW" "$AGENT_STATES" agent_name)"
+	"#{agent_window_state_icon}" "$(chain "$AGENT_WINDOW" "$AGENT_STATES" agent_icon)"
 )
 tree_pane="$(chain "$AGENT_PANE" "$AGENT_STATES" agent_tree_icon)"
 tree_window="$(chain "$AGENT_WINDOW" "$AGENT_STATES" agent_tree_icon)"

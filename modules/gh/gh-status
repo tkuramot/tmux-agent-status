@@ -57,7 +57,7 @@ refresh() {
 set_pane() {
 	local -a args=()
 	local opt value
-	for opt in "$OPT_GH_NUMBER:$2" "$OPT_GH_STATE:$3" "$OPT_GH_CHECKS:$4"; do
+	for opt in "$OPT_GH_PR_NUMBER:$2" "$OPT_GH_PR_STATE:$3" "$OPT_GH_CHECKS:$4"; do
 		value="${opt#*:}"
 		if [ -n "$value" ]; then
 			args+=(set-option -p -t "$1" "${opt%%:*}" "$value" \;)
@@ -92,7 +92,7 @@ cmd_tick() {
 			fi
 		fi
 		[ "$n:$s:$k" = "$number:$state:$checks" ] || set_pane "$pane" "$n" "$s" "$k"
-	done < <(tmux list-panes -a -F "#{pane_id}$US#{pane_current_path}$US#{$OPT_GH_NUMBER}$US#{$OPT_GH_STATE}$US#{$OPT_GH_CHECKS}")
+	done < <(tmux list-panes -a -F "#{pane_id}$US#{pane_current_path}$US#{$OPT_GH_PR_NUMBER}$US#{$OPT_GH_PR_STATE}$US#{$OPT_GH_CHECKS}")
 }
 
 case "${1:-}" in

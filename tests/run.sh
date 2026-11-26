@@ -71,11 +71,11 @@ P1="$(t display-message -p -t test '#{pane_id}')"
 W1="$(t display-message -p -t test '#{window_id}')"
 P2="$(t split-window -d -P -F '#{pane_id}' -t "$P1")"
 
-t set-option -g @pane-status-agent-icon-waiting A \; set-option -g @pane-status-agent-icon-error E \; \
-	set-option -g @pane-status-agent-icon-working R \; set-option -g @pane-status-agent-icon-idle I
+t set-option -g @pane-status-agent-state-icon-waiting A \; set-option -g @pane-status-agent-state-icon-error E \; \
+	set-option -g @pane-status-agent-state-icon-working R \; set-option -g @pane-status-agent-state-icon-idle I
 t set-hook -g pane-exited 'set-option -g @user-hook ran'
-t set-option -g window-status-format '#{agent_state}|#{agent_status}'
-t set-option -g pane-border-format '#{agent_pane_state}|#{agent_pane_status}'
+t set-option -g window-status-format '#{agent_window_state}|#{agent_window_state_icon}'
+t set-option -g pane-border-format '#{agent_state}|#{agent_state_icon}'
 "$PLUGIN"
 first_load="$(t show-option -gqv window-status-format)"
 "$PLUGIN"
@@ -83,7 +83,7 @@ assert_eq "re-loading the plugin succeeds" 0 "$?"
 
 assert_eq "placeholders are interpolated" "" "$(t show-option -gqv window-status-format | grep -F '#{agent_')"
 assert_eq "re-loading the plugin is idempotent" "$first_load" "$(t show-option -gqv window-status-format)"
-assert_eq "defaults are not written to options" "" "$(t show-option -gqv @pane-status-agent-icon-done)"
+assert_eq "defaults are not written to options" "" "$(t show-option -gqv @pane-status-agent-state-icon-done)"
 t set-hook -g 'pane-exited[7311]' 'set-option -g @stale-hook ran'
 "$PLUGIN"
 assert_eq "stale hooks of ours are removed, window hooks included" "" "$(t show-hooks -gw pane-exited | grep -F '[7311]')"
@@ -161,7 +161,7 @@ TMUX_PANE="$P2" "$AS" emit cond Calm </dev/null
 assert_eq "conditional action skips other states" "done" "$(pane_state "$P2")"
 rm -rf "$XDG_CONFIG_HOME/tmux-pane-status"
 assert_eq "unset icons render the default" "done|(done)" "$(pane_border "$P2")"
-t set-option -g @pane-status-agent-icon-done D
+t set-option -g @pane-status-agent-state-icon-done D
 assert_eq "icon changes apply without a refresh" "done|D" "$(pane_border "$P2")"
 
 "$AS" seen --pane "$P2"
@@ -326,7 +326,7 @@ EOF
 	pc="$(t split-window -d -P -F '#{pane_id}' -t "$pa" -c "$WORK/rc")"
 	pd="$(t split-window -d -P -F '#{pane_id}' -t "$pa" -c "$WORK")"
 	pe="$(t split-window -d -P -F '#{pane_id}' -t "$pa" -c "$WORK/ra")"
-	t set-option -g pane-border-format '#{gh_status}|#{gh_state}' \; set-option -g status-right 'right'
+	t set-option -g pane-border-format '#{gh_status}|#{gh_pr_state}' \; set-option -g status-right 'right'
 	"$PLUGIN"
 	"$PLUGIN"
 	assert_eq "the refresh job is added to status-right once" "right#('$GS' tick)" "$(t show-option -gqv status-right)"
@@ -344,7 +344,7 @@ EOF
 	tree_order() { # first module whose fragment appears in the tree format
 		local f
 		f="$(t show-option -gqv @pane-status_tree_format)"
-		case "${f%%_state*}" in *agent) echo agent ;; *gh) echo gh ;; *) echo none ;; esac
+		case "${f%%_state*}" in *_agent) echo agent ;; *_gh_pr) echo gh ;; *) echo none ;; esac
 	}
 	t set-option -g @pane-status-choose-tree 'gh agent'
 	"$PLUGIN"
@@ -357,19 +357,19 @@ EOF
 	"$PLUGIN"
 	assert_eq "choose-tree defaults to the loaded modules" agent "$(tree_order)"
 
-	t set-option -g pane-border-format '#{gh_number}:#{gh_checks}'
+	t set-option -g pane-border-format '#{gh_pr_number}:#{gh_checks}:#{gh_pr_state_icon}:#{gh_checks_icon}'
 	"$PLUGIN"
-	assert_eq "number and checks placeholders" "7:failure" "$(gh_pane "$pa")"
-	t set-option -g pane-border-format '#{gh_status}|#{gh_state}'
+	assert_eq "field and icon placeholders" "7:failure:review:✗" "$(gh_pane "$pa")"
+	t set-option -g pane-border-format '#{gh_status}|#{gh_pr_state}'
 	"$PLUGIN"
 
 	before="$(calls)"
 	tick
 	sleep 0.5
 	assert_eq "a fresh cache does not call gh" "$before" "$(calls)"
-	t set-option -g @pane-status-gh-icon-review R \; set-option -g @pane-status-gh-icon-failure F
+	t set-option -g @pane-status-gh-pr-state-icon-review R \; set-option -g @pane-status-gh-checks-icon-failure F
 	assert_eq "icon changes apply without a refresh" "#7 R F|review" "$(gh_pane "$pa")"
-	t set-option -gu @pane-status-gh-icon-review \; set-option -gu @pane-status-gh-icon-failure
+	t set-option -gu @pane-status-gh-pr-state-icon-review \; set-option -gu @pane-status-gh-checks-icon-failure
 
 	git -C "$WORK/rc" checkout -q feature
 	rm "$prs/rb.json"

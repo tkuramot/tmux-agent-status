@@ -3,26 +3,28 @@
 
 GH_TICK="#('$CURRENT_DIR/modules/gh/gh-status' tick)"
 
-gh_default() {
+gh_pr_state_icon() { icon gh-pr-state "$1" "$1"; }
+gh_checks_icon() {
 	case "$1" in
-	failure) printf '✗' ;;
-	pending) printf '…' ;;
-	success) printf '✓' ;;
-	*) printf '%s' "$1" ;;
+	failure) icon gh-checks "$1" '✗' ;;
+	pending) icon gh-checks "$1" '…' ;;
+	success) icon gh-checks "$1" '✓' ;;
 	esac
 }
-gh_icon() { icon gh "$1"; }
 
-GH_FORMAT="###{$OPT_GH_NUMBER} $(chain "#{$OPT_GH_STATE}" "$GH_STATES" gh_icon)\
-#{?#{$OPT_GH_CHECKS}, $(chain "#{$OPT_GH_CHECKS}" "$GH_CHECKS" gh_icon),}"
+GH_PR_STATE_ICON="$(chain "#{$OPT_GH_PR_STATE}" "$GH_PR_STATES" gh_pr_state_icon)"
+GH_CHECKS_ICON="$(chain "#{$OPT_GH_CHECKS}" "$GH_CHECKS" gh_checks_icon)"
+GH_FORMAT="###{$OPT_GH_PR_NUMBER} $GH_PR_STATE_ICON#{?#{$OPT_GH_CHECKS}, $GH_CHECKS_ICON,}"
 
 interpolations+=(
-	"#{gh_status}" "#{?#{$OPT_GH_STATE},$GH_FORMAT,}"
-	"#{gh_state}" "#{$OPT_GH_STATE}"
-	"#{gh_number}" "#{$OPT_GH_NUMBER}"
+	"#{gh_pr_number}" "#{$OPT_GH_PR_NUMBER}"
+	"#{gh_pr_state}" "#{$OPT_GH_PR_STATE}"
+	"#{gh_pr_state_icon}" "$GH_PR_STATE_ICON"
 	"#{gh_checks}" "#{$OPT_GH_CHECKS}"
+	"#{gh_checks_icon}" "$GH_CHECKS_ICON"
+	"#{gh_status}" "#{?#{$OPT_GH_PR_STATE},$GH_FORMAT,}"
 )
-tree_pane="#{?#{$OPT_GH_STATE},$(tree_item "$GH_FORMAT"),}"
+tree_pane="#{?#{$OPT_GH_PR_STATE},$(tree_item "$GH_FORMAT"),}"
 tree_window="$tree_pane"
 
 # choose-tree lists every pane, so one job refreshes them all.

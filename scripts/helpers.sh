@@ -11,10 +11,10 @@ AGENT_STATES="waiting error working done idle"
 OPT_AGENT_STATE="@pane-status_agent_state"
 OPT_AGENT_NAME="@pane-status_agent_name"
 
-GH_STATES="draft review changes approved merged closed"
+GH_PR_STATES="draft review changes approved merged closed"
 GH_CHECKS="failure pending success"
-OPT_GH_NUMBER="@pane-status_gh_number"
-OPT_GH_STATE="@pane-status_gh_state"
+OPT_GH_PR_NUMBER="@pane-status_gh_pr_number"
+OPT_GH_PR_STATE="@pane-status_gh_pr_state"
 OPT_GH_CHECKS="@pane-status_gh_checks"
 
 # Format for user option $1 if non-empty, else the literal $2. Defaults are

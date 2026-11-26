@@ -98,9 +98,9 @@ chain() {
 	printf '%s%s' "$out" "$close"
 }
 
-# Display of value $2 of module $1: @pane-status-$1-icon-$2, else <module>_default.
+# icon FIELD VALUE DEFAULT: @pane-status-<field>-icon-<value>, else DEFAULT.
 icon() {
-	option_format "@pane-status-$1-icon-$2" "$("$1_default" "$2")"
+	option_format "@pane-status-$1-icon-$2" "$3"
 }
 
 # Tree fragments keep the normal colour on the tree's grey text.
