@@ -2,8 +2,8 @@
 # Schema: pane options of schema 1. Needs: tmux 3.8.
 #
 # Shows the agent state and the pull request in the window list, pane borders
-# and choose-tree, using the plugin's 0.x labels. Copy into tmux.conf, below
-# any theme, and edit.
+# and choose-tree, with pull request labels such as "review" and "changes".
+# Copy into tmux.conf, below any theme, and edit.
 
 # A pane's agent state; "done" is an idle agent you have not looked at.
 %hidden PS_PANE="#{?#{&&:#{==:#{@pane-status_agent_activity},idle},#{!=:#{@pane-status_agent_seen},1}},done,#{@pane-status_agent_activity}}"

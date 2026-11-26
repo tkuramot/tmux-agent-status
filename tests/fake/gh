@@ -1,0 +1,23 @@
+#!/bin/sh
+# Fake gh for the tests, so nothing reaches GitHub.
+#   auth token --hostname H   succeeds for ghe.test only
+#   api ... --jq FILTER       answers from $FAKE_GH_DIR/prs/<repo>.json, a
+#                             GraphQL response, through FILTER
+# Each api call logs "<repo> <branches>" to gh.log, and its repository to
+# gh.hosts if sent with --hostname ghe.test.
+
+repo="$(basename "$PWD")"
+if [ "$1" = auth ]; then
+	[ "$4" = ghe.test ]
+	exit
+fi
+case " $* " in *" --hostname ghe.test "*) echo "$repo" >>"$FAKE_GH_DIR/gh.hosts" ;; esac
+branches=0
+for arg; do
+	case "$arg" in b[0-9]*=*) branches=$((branches + 1)) ;; esac
+done
+echo "$repo $branches" >>"$FAKE_GH_DIR/gh.log"
+while [ "$#" -gt 0 ] && [ "$1" != --jq ]; do shift; done
+response="$FAKE_GH_DIR/prs/$repo.json"
+[ -r "$response" ] || { echo "GraphQL: Could not resolve to a Repository" >&2; exit 1; }
+exec jq -r "$2" "$response"

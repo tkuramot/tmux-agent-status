@@ -98,8 +98,8 @@ Activities:
 | `error` | The agent stopped on an error. |
 
 Each field is a separate axis; the plugin does not combine them. "Done" is
-`idle` and not seen; the 0.x pull request labels (`draft`, `review`,
-`changes`, ...) combine state, draft and review. The
+`idle` and not seen; a pull request label such as `draft`, `review` or
+`changes` combines state, draft and review. The
 [formats recipe](docs/recipes/formats/formats.tmux) derives both.
 
 `seen` is reset by every change of activity, so a pane that finishes after you
@@ -119,14 +119,16 @@ set -g window-status-format '#{?#{==:#{@pane-status_agent_activity},waiting},#[b
 
 ```json
 {"schema_version":1,"panes":[
-{"pane":"%3","session":"api","window_index":1,"window_name":"auth","pane_index":0,"path":"/src/api",
+{"pane":"%3","session":"api","window_index":1,"window_name":"auth","pane_index":0,"title":"✳ Fix login","path":"/src/api",
  "agent":{"name":"claude-code","activity":"idle","since":1764200000,"seen":false},
  "pr":{"number":42,"url":"https://github.com/o/api/pull/42","state":"open","draft":false,"review":"required","checks":"pending"}}
 ]}
 ```
 
-`agent` and `pr` are `null` when the pane has none; their fields are the pane
-options above. New fields may be added within a schema version; any other
+`title` is the pane title, or `null` while it is tmux's default, the host
+name (full or short). Claude Code sets it to the conversation's topic after a
+status glyph that changes, as in `✳ Fix login`. `agent` and `pr` are `null`
+when the pane has none; their fields are the pane options above. New fields may be added within a schema version; any other
 change bumps it. Scripts should declare the version they were written for,
 so they fail loudly rather than silently after an upgrade:
 
@@ -162,10 +164,10 @@ needs.
 
 | Recipe | What it does | Needs |
 | --- | --- | --- |
-| [formats](docs/recipes/formats/formats.tmux) | Window list, pane borders and choose-tree, with window-wide state and the 0.x labels. | |
+| [formats](docs/recipes/formats/formats.tmux) | Window list, pane borders and choose-tree, with window-wide state and pull request labels. | |
 | [auto-seen](docs/recipes/auto-seen) | Marks a pane seen when you look at it. | |
 | [next](docs/recipes/next/next.sh) | Jumps to the most urgent other pane: waiting, error, then done. | `jq` |
-| [picker](docs/recipes/picker/picker.sh) | A popup listing panes by urgency, with a preview; Enter jumps. | `jq`, `fzf` |
+| [agents](docs/recipes/agents/agents.sh) | A popup of agent panes grouped by state, with counts and a preview; Enter jumps. | `jq`, `fzf` |
 | [refresh-on-idle](docs/recipes/refresh-on-idle/on-change.d/refresh-on-idle) | Looks up pull requests as soon as an agent goes idle. | |
 
 ## Agent state
@@ -182,14 +184,14 @@ pane-status hooks claude-code
 ```
 
 Merge them into `~/.claude/settings.json` with `jq`. Your other hooks keep
-their order, hooks from a previous install (any path, 0.x included) are
-replaced, and a symlinked file stays a symlink:
+their order, hooks from a previous install (any path) are replaced, and a
+symlinked file stays a symlink:
 
 ```sh
 f=~/.claude/settings.json
 [ -f "$f" ] || echo '{}' >"$f"
 merge='
-  def ours: (.command // "") | test("/(scripts/agent-status|modules/agent/agent-status|bin/pane-status)'"'"'? emit ");
+  def ours: (.command // "") | test("/bin/pane-status'"'"'? emit ");
   .hooks = ((.hooks // {}) | map_values(map(.hooks |= map(select(ours | not)) | select(.hooks | length > 0)))
     | with_entries(select(.value | length > 0)) as $kept
     | reduce ($new.hooks | keys[]) as $k ($kept; .[$k] = ((.[$k] // []) + $new.hooks[$k])))'
@@ -295,31 +297,6 @@ pane-status list [--require-schema N]
 the agent name, when the pane already has that activity. `refresh` fails when
 no poller runs.
 
-## Upgrading from 0.x
-
-1.0 moves everything the plugin showed into recipes.
-
-1. Restart the tmux server (`tmux kill-server`): 0.x left formats, keys and a
-   `status-right` job behind in the running server.
-2. Reinstall the [Claude Code hooks](#claude-code); the CLI moved to
-   `bin/pane-status`, and the merge replaces the old entries.
-3. Replace placeholders and options:
-
-| 0.x | 1.0 |
-| --- | --- |
-| `#{agent_state}`, `#{agent_state_icon}` | `#{@pane-status_agent_activity}`; `PS_PANE` in [formats](docs/recipes/formats/formats.tmux) adds `done`. |
-| `#{agent_window_state}`, `#{agent_window_state_icon}` | `PS_WINDOW` in [formats](docs/recipes/formats/formats.tmux). |
-| `#{gh_pr_number}` | `#{@pane-status_pr_number}` |
-| `#{gh_pr_state}`, `#{gh_pr_state_icon}` | `PS_PR_LABEL` in [formats](docs/recipes/formats/formats.tmux). |
-| `#{gh_checks}`, `#{gh_checks_icon}`, `#{gh_status}` | `#{@pane-status_pr_checks}`; `PS_PR_CHECKS`, `PS_PR` in [formats](docs/recipes/formats/formats.tmux). |
-| `prefix s` / `prefix w` with state | The choose-tree bindings in [formats](docs/recipes/formats/formats.tmux). |
-| `@pane-status-<field>-icon-<value>` | Edit the recipe. |
-| `@pane-status-agent-auto-seen` | [auto-seen](docs/recipes/auto-seen). |
-| `@pane-status-modules` | Pull requests: `@pane-status-gh-interval 0`. Agents: do not install the hooks. |
-| `@pane-status-gh-ttl` | `@pane-status-gh-interval` |
-| `agent-status list` | `pane-status list` (JSON). |
-| agent state `done` | Activity `idle` with `seen` `0`. |
-
 ## Limitations
 
 - agent: the pane is identified through `$TMUX_PANE`. Agents that do not pass
@@ -346,7 +323,8 @@ no poller runs.
 ## Development
 
 ```sh
-tests/run.sh   # runs against a private tmux server; gh and recipe tests need jq and git
+tests/run.sh          # every test file, each against its own private tmux server
+tests/run.sh gh list  # only these; files are plugin, agent, list, gh, recipes
 ```
 
 ## License

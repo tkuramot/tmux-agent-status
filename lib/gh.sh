@@ -168,13 +168,19 @@ poll_once() {
 
 # Polls every @pane-status-gh-interval seconds while a client is attached.
 # `refresh` (SIGUSR1) cuts the wait short. The plugin runs it as a tmux job,
-# so it dies with the server; it also exits when another poller takes over.
+# so it dies with the server; it also exits if the PID option no longer
+# names it.
 cmd_poll() {
-	local interval again="" old claim
+	local interval again="" old claim sleeper=""
 	trap 'again=1' USR1
-	# Claimed in one tmux command, so of two pollers started together one exits.
-	# (The condition is a variable: bash 3.2 brace-expands it inside "$(...)".)
+	# tmux ends the job with SIGTERM; the sleep would outlive it.
+	trap 'kill "$sleeper" 2>/dev/null; exit 0' TERM HUP INT
+	# A running poller stays. Otherwise the PID option is claimed if it still
+	# holds the value read, in one tmux command, so of two pollers started
+	# together one exits. (The condition is a variable: bash 3.2 brace-expands
+	# it inside "$(...)".)
 	old="$(tmux show-option -gqv "$OPT_POLLER_PID" 2>/dev/null)" || return 0
+	! is_poller "$old" || return 0
 	claim="#{==:#{$OPT_POLLER_PID},$old}"
 	[ "$(tmux if-shell -F "$claim" "set-option -g $OPT_POLLER_PID $$ ; display-message -p 1" 2>/dev/null)" = 1 ] ||
 		return 0
@@ -190,8 +196,9 @@ cmd_poll() {
 		# A refresh during the poll may be about a pane it already read.
 		[ -z "$again" ] || continue
 		sleep "$interval" &
-		[ -n "$again" ] || wait "$!"
-		kill "$!" 2>/dev/null
+		sleeper=$!
+		[ -n "$again" ] || wait "$sleeper"
+		kill "$sleeper" 2>/dev/null
 	done
 }
 

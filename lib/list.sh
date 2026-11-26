@@ -4,6 +4,9 @@
 
 SCHEMA_VERSION=1
 
+# The pane title, unless it is tmux's default (the host name).
+TITLE='?#{||:#{==:#{pane_title},#{host}},#{==:#{pane_title},#{host_short}}},,#{pane_title}'
+
 # The helpers set variables rather than print, so a record costs no forks.
 
 # to_string NAME: rewrites variable NAME as a JSON string, or null if empty.
@@ -41,17 +44,17 @@ to_bool() {
 
 print_list() {
 	local sep="" listed=" " agent pr opt format="#{pane_id}"
-	local pane session window_index window_name pane_index path
+	local pane session window_index window_name pane_index title path
 	local name activity since seen_flag number url state draft review checks
 	# The path is last: one with a newline continues on a line of its own,
 	# which is skipped.
-	for opt in session_name window_index window_name pane_index \
+	for opt in session_name window_index window_name pane_index "$TITLE" \
 		"$OPT_AGENT_NAME" "$OPT_AGENT_ACTIVITY" "$OPT_AGENT_SINCE" "$OPT_AGENT_SEEN" $OPT_PRS pane_current_path; do
 		format="$format$US#{$opt}"
 	done
 
 	printf '{"schema_version":%d,"panes":[' "$SCHEMA_VERSION"
-	while IFS="$US" read -r pane session window_index window_name pane_index \
+	while IFS="$US" read -r pane session window_index window_name pane_index title \
 		name activity since seen_flag number url state draft review checks path; do
 		case "$listed" in *" $pane "*) continue ;; esac
 		case "$pane" in %*) ;; *) continue ;; esac
@@ -80,9 +83,10 @@ print_list() {
 		to_number window_index
 		to_string window_name
 		to_number pane_index
+		to_string title
 		to_string path
-		printf '%s\n{"pane":%s,"session":%s,"window_index":%s,"window_name":%s,"pane_index":%s,"path":%s,"agent":%s,"pr":%s}' \
-			"$sep" "$pane" "$session" "$window_index" "$window_name" "$pane_index" "$path" "$agent" "$pr"
+		printf '%s\n{"pane":%s,"session":%s,"window_index":%s,"window_name":%s,"pane_index":%s,"title":%s,"path":%s,"agent":%s,"pr":%s}' \
+			"$sep" "$pane" "$session" "$window_index" "$window_name" "$pane_index" "$title" "$path" "$agent" "$pr"
 		sep=","
 	done < <(tmux list-panes -a -F "$format")
 	printf '\n]}\n'

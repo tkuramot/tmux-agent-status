@@ -2,13 +2,13 @@
 
 ## 1.0.0
 
-The plugin records state and no longer shows it. See
-[Upgrading from 0.x](README.md#upgrading-from-0x).
+The plugin records state and no longer shows it.
 
 - Breaking: removed the placeholders, icons, choose-tree format, key bindings
   and `status-right` job. Their replacements are in `docs/recipes/formats`.
 - Breaking: one CLI, `bin/pane-status`, replaces `agent-status` and
-  `gh-status`. Reinstall the agent hooks.
+  `gh-status`. Remove the old `agent-status` hook entries, then reinstall the
+  agent hooks.
 - Breaking: agent state is split into activity (`working`, `waiting`, `idle`,
   `error`), `since` and `seen`; `done` is gone, and adapter maps use
   activities. Removed `@pane-status-agent-auto-seen` (now the auto-seen

@@ -39,16 +39,18 @@ config_dir() {
 	[ -n "$base" ] && printf '%s/tmux-pane-status' "$base"
 }
 
-# Prints the poller's PID if it is running. Checking the command line keeps a
-# reused PID from being mistaken for it.
+# is_poller PID: checking the command line keeps a reused PID from being
+# mistaken for the poller.
+is_poller() {
+	case "$1" in '' | *[!0-9]*) return 1 ;; esac
+	case "$(ps -p "$1" -o args= 2>/dev/null)" in *"pane-status poll"*) return 0 ;; *) return 1 ;; esac
+}
+
+# Prints the poller's PID if it is running.
 poller_pid() {
 	local pid
 	pid="$(tmux show-option -gqv "$OPT_POLLER_PID" 2>/dev/null)"
-	case "$pid" in '' | *[!0-9]*) return 1 ;; esac
-	case "$(ps -p "$pid" -o args= 2>/dev/null)" in
-	*"pane-status poll"*) printf '%s' "$pid" ;;
-	*) return 1 ;;
-	esac
+	is_poller "$pid" && printf '%s' "$pid"
 }
 
 # write_if PANE CONDITION COMMANDS: runs the tmux COMMANDS if the format

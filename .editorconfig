@@ -8,5 +8,5 @@ charset = utf-8
 [*.{sh,tmux}]
 indent_style = tab
 
-[{bin/pane-status,docs/recipes/*/on-change.d/*}]
+[{bin/pane-status,tests/fake/gh,docs/recipes/*/on-change.d/*}]
 indent_style = tab
