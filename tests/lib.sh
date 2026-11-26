@@ -79,12 +79,15 @@ emit() { TMUX_PANE="$1" "$PS" emit claude-code "$2" </dev/null; }
 new_pane() { t new-window -d -P -F '#{pane_id}' -t test -c "$1"; }
 split_pane() { t split-window -d -P -F '#{pane_id}' -t "$1" -c "${2:-$WORK}"; }
 # Counts pollers; the poller's subshells share its command line, so processes
-# whose parent is a poller are not counted.
+# whose parent is a poller are not counted, nor those that exited since pgrep
+# listed them.
 pollers() {
-	local pids pid n=0
+	local pids pid ppid n=0
 	pids=" $(pgrep -f "$PS poll" | xargs) "
 	for pid in $pids; do
-		case "$pids" in *" $(ps -o ppid= -p "$pid" | tr -d ' ') "*) ;; *) n=$((n + 1)) ;; esac
+		ppid="$(ps -o ppid= -p "$pid" | tr -d ' ')"
+		[ -n "$ppid" ] || continue
+		case "$pids" in *" $ppid "*) ;; *) n=$((n + 1)) ;; esac
 	done
 	echo "$n"
 }

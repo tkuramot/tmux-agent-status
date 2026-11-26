@@ -59,10 +59,12 @@ subscribe_log
 "$PLUGIN"
 wait "$load"
 eventually_eq "concurrent loads start a poller" 1 pollers
-sleep 0.5
+# The poll notifies after writing every pane, one at a time.
+eventually_eq "one notification for all changed panes" 1 line_count "$WORK/notified"
+# By now the losing poller has long given up its claim.
 assert_eq "concurrent loads leave one poller" 1 "$(pollers)"
-eventually_eq "values are renamed, not combined; other forks are ignored" "7 open 0 changes_requested failure" record "$pa"
-eventually_eq "panes on the same branch share the result" "7 open 0 changes_requested failure" record "$pe"
+assert_eq "values are renamed, not combined; other forks are ignored" "7 open 0 changes_requested failure" "$(record "$pa")"
+assert_eq "panes on the same branch share the result" "7 open 0 changes_requested failure" "$(record "$pe")"
 assert_eq "a worktree is the same repository; your fork counts" "70 open 1 none none" "$(record "$pw")"
 assert_eq "one lookup per repository, for all its branches" "ra 2
 rb 1" "$(calls | sort)"
@@ -71,7 +73,6 @@ assert_eq "merged pull requests keep their checks" "8 merged 0 approved success"
 assert_eq "the url is recorded" "https://github.com/o/r/pull/8" "$(opt "$pb" pr_url)"
 assert_eq "detached HEAD has no pull request" "    " "$(record "$pc")"
 assert_eq "a directory outside a repository has none" "    " "$(record "$pd")"
-eventually_eq "one notification for all changed panes" 1 line_count "$WORK/notified"
 assert_eq "it names its source and the changed panes" "gh $(printf '%s\n' "$pa" "$pe" "$pw" "$pb" | sort | xargs)" \
 	"$(cut -d ' ' -f 1 "$WORK/notified") $(cut -d ' ' -f 2- "$WORK/notified" | tr ' ' '\n' | sort | xargs)"
 assert_eq "list reports the pull request" '{"number":8,"url":"https://github.com/o/r/pull/8","state":"merged","draft":false,"review":"approved","checks":"success"}' \
