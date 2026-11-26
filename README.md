@@ -341,8 +341,6 @@ no poller runs.
 - gh: each lookup runs `git` once per pane.
 - gh: pull requests are looked up by the local branch name, so a branch that
   pushes to a differently named remote branch finds none.
-- gh: lookups go to `gh`'s default host; for GitHub Enterprise, set `GH_HOST`
-  in the tmux server's environment.
 - The install path must not contain `'`, `"`, `$`, `\`, `` ` `` or `#`.
 
 ## Development

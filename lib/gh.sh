@@ -43,12 +43,38 @@ repo_branch() {
 	case "$ref" in refs/heads/*) printf '%s%s%s' "${out%%$'\n'*}" "$US" "${ref#refs/heads/}" ;; *) return 1 ;; esac
 }
 
+# Prints the host of the remote gh uses in DIR: the one `gh repo set-default`
+# chose, else upstream, github, origin, else the first.
+remote_host() {
+	local remote url host
+	remote="$(git -C "$1" config --get-regexp '^remote\..*\.gh-resolved$' 2>/dev/null)"
+	remote="${remote#remote.}"
+	remote="${remote%%.gh-resolved *}"
+	if [ -z "$remote" ]; then
+		for remote in upstream github origin $(git -C "$1" remote) ''; do
+			git -C "$1" remote get-url "$remote" >/dev/null 2>&1 && break
+		done
+	fi
+	url="$(git -C "$1" remote get-url "$remote" 2>/dev/null)" || return 1
+	case "$url" in
+	*://*) host="${url#*://}" host="${host#*@}" ;;
+	*@*:*) host="${url#*@}" ;;
+	*) return 1 ;;
+	esac
+	printf '%s' "${host%%[:/]*}"
+}
+
 # query_prs DIR BRANCH...: one GraphQL request, run in DIR so that gh picks
-# the repository (and `gh repo set-default`) from there.
+# the repository (and `gh repo set-default`) from there. `gh api` sends to its
+# default host whatever the repository, so the remote's host is passed when gh
+# is logged in to it (an SSH host alias is not).
 query_prs() {
-	local dir="$1" i=0 vars="" fields="" branch
+	local dir="$1" i=0 vars="" fields="" branch host
 	local -a args=()
 	shift
+	if host="$(remote_host "$dir")" && gh auth token --hostname "$host" >/dev/null 2>&1; then
+		args+=(--hostname "$host")
+	fi
 	for branch in "$@"; do
 		vars="$vars, \$b$i: String!"
 		fields="$fields b$i: pullRequests(headRefName: \$b$i, first: 20, states: [OPEN, MERGED, CLOSED], orderBy: {field: CREATED_AT, direction: DESC}) { nodes { ...pr } }"

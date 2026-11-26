@@ -306,6 +306,9 @@ gh_tests() {
 	mkdir -p "$prs"
 	cat >"$BIN/gh" <<EOF
 #!/bin/sh
+[ "\$1" != auth ] || [ "\$4" = ghe.test ] || exit 1
+[ "\$1" != auth ] || exit 0
+case " \$* " in *" --hostname ghe.test "*) echo "\$(basename "\$PWD")" >>"$WORK/gh.hosts" ;; esac
 branches=0
 for arg; do case "\$arg" in b[0-9]*=*) branches=\$((branches + 1)) ;; esac; done
 echo "\$(basename "\$PWD") \$branches" >>"$WORK/gh.log"
@@ -322,6 +325,8 @@ EOF
 	done
 	git -C "$WORK/ra" worktree add -q -b other "$WORK/ra-other"
 	git -C "$WORK/rc" checkout -q --detach
+	git -C "$WORK/ra" remote add origin https://ghe.test/o/ra.git
+	git -C "$WORK/rb" remote add origin git@github-work:o/rb.git
 	pr() { # number state draft review checks [head-owner]: a pull request, from a fork if head-owner is given
 		printf '{"number":%s,"url":"https://github.com/o/r/pull/%s","state":"%s","isDraft":%s,"reviewDecision":%s,
 			"isCrossRepository":%s,"headRepositoryOwner":{"login":"%s"},
@@ -361,6 +366,7 @@ EOF
 	assert_eq "a worktree is the same repository; your fork counts" "70 open 1 none none" "$(record "$pw")"
 	assert_eq "one lookup per repository, for all its branches" "ra 2
 rb 1" "$(calls | sort)"
+	assert_eq "lookups go to the remote's host if gh is logged in to it" ra "$(sort -u "$WORK/gh.hosts")"
 	assert_eq "merged pull requests keep their checks" "8 merged 0 approved success" "$(record "$pb")"
 	assert_eq "the url is recorded" "https://github.com/o/r/pull/8" "$(opt "$pb" pr_url)"
 	assert_eq "detached HEAD has no pull request" "    " "$(record "$pc")"
