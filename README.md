@@ -126,10 +126,9 @@ set -g window-status-format '#{?#{==:#{@pane-status_agent_activity},waiting},#[b
 ```
 
 `title` is the pane title, or `null` while it is tmux's default, the host
-name (full or short). Claude Code sets it to the conversation's topic after a
-status glyph that changes, as in `✳ Fix login`. `agent` and `pr` are `null`
-when the pane has none; their fields are the pane options above. New fields may be added within a schema version; any other
-change bumps it. Scripts should declare the version they were written for,
+name (full or short). `agent` and `pr` are `null` when the pane has none;
+their fields are the pane options above. New fields may be added within a
+schema version; any other change bumps it. Scripts should declare the version they were written for,
 so they fail loudly rather than silently after an upgrade:
 
 ```sh
