@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# pane-status: records the state of what runs in each tmux pane. See README.
+
+set -u
+set -f
+shopt -u patsub_replacement 2>/dev/null
+
+# Follow symlinks (e.g. ~/.local/bin/pane-status); `readlink -f` is not portable.
+source="${BASH_SOURCE[0]}"
+while [ -L "$source" ]; do
+	dir="$(cd -P "$(dirname "$source")" && pwd)"
+	source="$(readlink "$source")"
+	case "$source" in /*) ;; *) source="$dir/$source" ;; esac
+done
+ROOT="$(cd -P "$(dirname "$source")/.." && pwd)"
+CLI="$ROOT/bin/pane-status"
+unset source dir
+
+# shellcheck source=lib/common.sh
+. "$ROOT/lib/common.sh"
+# shellcheck source=lib/agent.sh
+. "$ROOT/lib/agent.sh"
+# shellcheck source=lib/gh.sh
+. "$ROOT/lib/gh.sh"
+# shellcheck source=lib/list.sh
+. "$ROOT/lib/list.sh"
+
+usage() {
+	cat <<'EOF'
+Usage: pane-status <command> [arguments]
+
+Agent state:
+  emit <agent> <event>        Apply the adapter's action for an event. For
+                              agent hooks: discards stdin, prints nothing,
+                              always exits 0.
+  set <activity> [--pane P] [--agent A]
+  clear [--pane P]
+  seen [--pane P]             Mark the current activity as seen.
+  check <agent>               Validate the agent's adapter map.
+  hooks <agent>               Print hook settings generated from the map.
+
+Pull requests:
+  refresh                     Make the poller look up pull requests now.
+  poll                        Run the poller (the plugin starts it).
+
+Reading:
+  list [--require-schema N]   Print every pane's state as JSON.
+
+Activities: working waiting idle error. --pane defaults to $TMUX_PANE.
+EOF
+}
+
+# An explicit empty target is an error rather than $TMUX_PANE.
+resolve_pane() {
+	local id
+	[ -n "$1" ] || return 1
+	id="$(tmux display-message -p -t "$1" '#{pane_id}' 2>/dev/null)"
+	case "$id" in %*) printf '%s' "$id" ;; *) return 1 ;; esac
+}
+
+# Sets PANE (from --pane, else $TMUX_PANE), AGENT and POSITIONAL.
+parse_args() {
+	local target="${TMUX_PANE:-}"
+	AGENT="" POSITIONAL=()
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		--pane | --agent)
+			[ "$#" -ge 2 ] || die "$1 requires a value"
+			if [ "$1" = --pane ]; then target="$2"; else AGENT="$2"; fi
+			shift 2
+			;;
+		--) shift; POSITIONAL+=("$@"); break ;;
+		-*) die "unknown option: $1" ;;
+		*) POSITIONAL+=("$1"); shift ;;
+		esac
+	done
+	PANE="$(resolve_pane "$target")" || die "no such pane: ${target:-\$TMUX_PANE}"
+}
+
+# The event is applied before stdin is drained, so a large payload does not
+# delay it. Draining is deadline-bound, so a writer that keeps stdin open
+# cannot hang the agent.
+cmd_emit() {
+	emit_event "$@" >/dev/null 2>&1
+	if [ ! -t 0 ]; then
+		local end=$((SECONDS + 2))
+		while [ "$SECONDS" -lt "$end" ] && IFS= read -r -t 1 _; do :; done
+	fi
+	exit 0
+}
+
+cmd_set() {
+	parse_args "$@"
+	[ "${#POSITIONAL[@]}" -eq 1 ] || die "usage: pane-status set <activity> [--pane P] [--agent A]"
+	is_activity "${POSITIONAL[0]}" || die "unknown activity: ${POSITIONAL[0]} (expected: $ACTIVITIES)"
+	[ -z "$AGENT" ] || is_valid_agent_name "$AGENT" || die "invalid agent name: $AGENT"
+	set_activity "$PANE" "${POSITIONAL[0]}" "$AGENT"
+}
+
+cmd_clear() {
+	parse_args "$@"
+	[ "${#POSITIONAL[@]}" -eq 0 ] || die "usage: pane-status clear [--pane P]"
+	clear_agent "$PANE"
+}
+
+cmd_seen() {
+	parse_args "$@"
+	[ "${#POSITIONAL[@]}" -eq 0 ] || die "usage: pane-status seen [--pane P]"
+	mark_seen "$PANE"
+}
+
+cmd_check() {
+	local map
+	is_valid_agent_name "${1:-}" || die "usage: pane-status check <agent>"
+	map="$(find_map "$1")" || die "no adapter for agent: $1"
+	validate_map "$map" || exit 1
+	printf '%s: ok\n' "$map"
+}
+
+cmd_hooks() {
+	local map
+	is_valid_agent_name "${1:-}" || die "usage: pane-status hooks <agent>"
+	map="$(find_map "$1")" || die "no adapter for agent: $1"
+	validate_map "$map" || die "fix the map first: $map"
+	print_hooks "$1" "$map"
+}
+
+main() {
+	local cmd="${1:-}"
+	[ "$#" -eq 0 ] || shift
+	case "$cmd" in
+	emit) cmd_emit "$@" ;;
+	set) cmd_set "$@" ;;
+	clear) cmd_clear "$@" ;;
+	seen) cmd_seen "$@" ;;
+	check) cmd_check "$@" ;;
+	hooks) cmd_hooks "$@" ;;
+	refresh) cmd_refresh ;;
+	poll) cmd_poll ;;
+	list) cmd_list "$@" ;;
+	-h | --help | help) usage ;;
+	'') usage >&2; exit 2 ;;
+	*) die "unknown command: $cmd (see pane-status --help)" ;;
+	esac
+}
+
+main "$@"

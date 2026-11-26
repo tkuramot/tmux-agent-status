@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck -x pane-status.tmux scripts/helpers.sh modules/*/load.sh modules/agent/agent-status modules/gh/gh-status tests/run.sh
+      - run: shellcheck -x pane-status.tmux bin/pane-status lib/*.sh tests/run.sh docs/recipes/*/*.sh docs/recipes/*/on-change.d/*
 
   test:
     strategy:

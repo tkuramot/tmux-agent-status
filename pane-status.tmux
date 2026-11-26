@@ -1,24 +1,15 @@
 #!/usr/bin/env bash
-# TPM entry point. TPM discards output, so report problems with display-message.
-
-shopt -u patsub_replacement 2>/dev/null
+# TPM entry point: sets the plugin's tmux hooks and starts the pull request
+# poller. It changes no formats or keys. TPM discards output, so report
+# problems with display-message.
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/helpers.sh
-. "$CURRENT_DIR/scripts/helpers.sh"
+# shellcheck source=lib/common.sh
+. "$CURRENT_DIR/lib/common.sh"
 
+CLI="$CURRENT_DIR/bin/pane-status"
 # Fixed index: reloading replaces our hooks and leaves the user's alone.
 HOOK_INDEX=7311
-
-# Filled by modules/<name>/load.sh.
-interpolations=()
-loaded=()
-tree_panes=()
-tree_windows=()
-tree_sessions=()
-TREE_PANE=""
-TREE_WINDOW=""
-TREE_SESSION=""
 
 # tmux_version_at_least MAJOR MINOR
 tmux_version_at_least() {
@@ -48,131 +39,37 @@ clear_hooks() {
 	done
 }
 
-interpolated_options=(
-	status-left
-	status-right
-	window-status-format
-	window-status-current-format
-	pane-border-format
-)
-
-interpolate() {
-	local value="$1" i
-	for ((i = 0; i < ${#interpolations[@]}; i += 2)); do
-		value="${value//"${interpolations[i]}"/${interpolations[i + 1]}}"
-	done
-	printf '%s' "$value"
-}
-
-update_formats() {
-	local option value new
-	for option in "${interpolated_options[@]}"; do
-		value="$(tmux show-option -gqv "$option")"
-		new="$(interpolate "$value")"
-		[ "$new" = "$value" ] || tmux set-option -g "$option" "$new"
-	done
-}
-
-# tmux 3.8's default choose-tree format plus each module's fragments.
-tree_format() {
-	local title='#{?#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}},: "#{pane_title}",}'
-	local window_title='#{?#{&&:#{==:#{window_panes},1},#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}}},: "#{pane_title}",}'
-	printf '%s' "#{?pane_format,\
-#{?pane_marked,#[fg=thememagenta],}#{?pane_floating_flag,#[underscore],}#{pane_current_command}\
-#[fg=themelightgrey]#{pane_flags}$TREE_PANE$title,\
-window_format,\
-#{?window_marked_flag,#[fg=thememagenta],}#{window_name}\
-#[fg=themelightgrey]#{window_flags}$TREE_WINDOW$window_title,\
-#[fg=themelightgrey]#{session_windows} windows#{?session_grouped, (group #{session_group}: #{session_group_list}),}\
-#{?session_attached, (attached),}$TREE_SESSION}"
-}
-
-# chain LIST STATES RENDER: `RENDER <state>` for the first of STATES that
-# the space-separated list LIST expands to contains.
-chain() {
-	local st out="" close=""
-	for st in $2; do
-		out="$out#{?#{m:*$st*,$1},$("$3" "$st"),"
-		close="$close}"
-	done
-	printf '%s%s' "$out" "$close"
-}
-
-# icon FIELD VALUE DEFAULT: @pane-status-<field>-icon-<value>, else DEFAULT.
-icon() {
-	option_format "@pane-status-$1-icon-$2" "$3"
-}
-
-# Tree fragments keep the normal colour on the tree's grey text.
-tree_item() {
-	printf ' #[fg=default]%s#[fg=themelightgrey]' "$1"
-}
-
-# Fragments of the modules in @pane-status-choose-tree, in its order.
-select_tree() {
-	local name i picked=" "
-	for name in $1; do
-		case "$picked" in *" $name "*) continue ;; esac
-		picked="$picked$name "
-		for ((i = 0; i < ${#loaded[@]}; i++)); do
-			[ "${loaded[i]}" = "$name" ] || continue
-			TREE_PANE="$TREE_PANE${tree_panes[i]}"
-			TREE_WINDOW="$TREE_WINDOW${tree_windows[i]}"
-			TREE_SESSION="$TREE_SESSION${tree_sessions[i]}"
-		done
-	done
-}
-
-# Only tmux's default s/w bindings (or ours) are replaced.
-bind_tree_keys() {
-	local enabled kw key note words
-	enabled="$(get_tmux_option @pane-status-choose-tree on)"
-	[ "$enabled" != on ] || enabled="${loaded[*]:-}"
-	select_tree "$enabled"
-	tmux set-option -g "$OPT_TREE_FORMAT" "$(tree_format)"
-	for kw in s:session w:window; do
-		key="${kw%%:*}"
-		note="Choose a ${kw#*:} from a list"
-		read -r -a words <<<"$(tmux list-keys -T prefix "$key" 2>/dev/null)"
-		if [ "$enabled" != off ]; then
-			if [ "${words[*]:4}" = "choose-tree -Z$key" ]; then
-				tmux bind-key -N "$note" "$key" choose-tree "-Z$key" -F "#{E:$OPT_TREE_FORMAT}"
-			fi
-		elif [ "${words[*]:4}" = "choose-tree -Z$key -F \"#{E:$OPT_TREE_FORMAT}\"" ]; then
-			tmux bind-key -N "$note" "$key" choose-tree "-Z$key"
-		fi
-	done
+# A running poller is woken, so a changed interval applies now. A new one runs
+# as a tmux job, which tmux kills when the server exits.
+start_poller() {
+	local pid
+	command -v gh >/dev/null 2>&1 || return 0
+	if pid="$(poller_pid)"; then
+		kill -USR1 "$pid"
+	else
+		tmux run-shell -b "exec '$CLI' poll >/dev/null 2>&1"
+	fi
 }
 
 main() {
-	local module
 	if ! tmux_version_at_least 3 8; then
 		tmux display-message "tmux-pane-status requires tmux 3.8 or later"
 		return 0
 	fi
-	# The path is embedded in tmux command strings and sh single quotes.
+	# The path is embedded in tmux command strings, which expand `#`.
 	case "$CURRENT_DIR" in
-	*[\'\"\$\\\`#\(\)]*)
+	*[\'\"\$\\\`#]*)
 		tmux display-message "tmux-pane-status: unsupported characters in install path"
 		return 0
 		;;
 	esac
 	clear_hooks
-	for module in $(get_tmux_option @pane-status-modules "$DEFAULT_MODULES"); do
-		if [ "${module//[!a-z]/}" = "$module" ] && [ -r "$CURRENT_DIR/modules/$module/load.sh" ]; then
-			tree_pane="" tree_window="" tree_session=""
-			# shellcheck source=/dev/null
-			. "$CURRENT_DIR/modules/$module/load.sh"
-			loaded+=("$module")
-			tree_panes+=("$tree_pane")
-			tree_windows+=("$tree_window")
-			tree_sessions+=("$tree_session")
-		else
-			tmux display-message "tmux-pane-status: unknown module: $module"
-		fi
-	done
-	update_formats
-	bind_tree_keys
+	# Under remain-on-exit a dead pane keeps its options.
+	set_hook pane-died "run-shell -b \"'$CLI' clear --pane #{hook_pane}\""
+	# The poller skips lookups while no client is attached. Without a poller
+	# (no gh, interval 0) refresh fails, which is not worth a message.
+	set_hook client-attached "run-shell -b \"'$CLI' refresh >/dev/null 2>&1 || :\""
+	start_poller
 }
 
 main

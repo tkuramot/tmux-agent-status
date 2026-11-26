@@ -1,0 +1,15 @@
+#!/bin/sh
+# tmux-pane-status recipe: refresh-on-idle
+# Schema: notifications and pane options of schema 1. Needs: pane-status on PATH.
+#
+# Looks up pull requests as soon as an agent goes idle, since agents often push
+# just before they stop. Unseen idle means it just stopped: marking it seen
+# notifies too. Copy to ~/.config/tmux-pane-status/on-change.d/ and
+# make it executable.
+
+[ "$PANE_STATUS_SOURCE" = agent ] || exit 0
+for pane in $PANE_STATUS_PANES; do
+	if [ "$(tmux display-message -p -t "$pane" '#{@pane-status_agent_activity}:#{@pane-status_agent_seen}')" = idle:0 ]; then
+		exec pane-status refresh
+	fi
+done

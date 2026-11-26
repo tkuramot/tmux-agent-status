@@ -1,0 +1,12 @@
+#!/bin/sh
+# tmux-pane-status recipe: auto-seen (part 2 of 2)
+# Schema: notifications of schema 1. Needs: pane-status on PATH.
+#
+# Marks a pane seen when its agent changes while the pane is on screen. Copy to
+# ~/.config/tmux-pane-status/on-change.d/ and make it executable.
+
+[ "$PANE_STATUS_SOURCE" = agent ] || exit 0
+for pane in $PANE_STATUS_PANES; do
+	visible="$(tmux display-message -p -t "$pane" '#{&&:#{pane_active},#{&&:#{window_active},#{session_attached}}}')"
+	[ "$visible" != 1 ] || pane-status seen --pane "$pane"
+done
